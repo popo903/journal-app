@@ -88,6 +88,7 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .hlistitem .list.ok{color:var(--ok)}
 .grid.managing{gap:14px}
 .goals{display:grid;gap:10px;padding:0 16px 14px}
+#qadd{padding:0 16px}
 .goal{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:8px 14px;position:relative;overflow:hidden;transition:transform .2s}
 .goal .ghead{display:flex;align-items:center;font-size:13px;color:var(--ink2);margin-bottom:0}
 .goal .goal-row{display:flex;align-items:center;gap:10px}
@@ -170,11 +171,10 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .invhubrow .ih-sub{font-size:12.5px;color:var(--ink2);margin-top:2px}
 .invhubrow .ih-arrow{color:var(--ink2);font-size:18px}
 /* ===== 打卡⇄图鉴滑动切换开关 ===== */
-.hinv-toggle{position:relative;width:78px;height:30px;border-radius:999px;background:var(--bg);border:1.5px solid var(--line);display:inline-flex;align-items:center;justify-content:space-between;padding:0 9px;flex:none;box-shadow:var(--shadow);cursor:pointer}
-.hinv-toggle .ht-lab{font-size:10.5px;color:var(--ink2);line-height:1;user-select:none}
-.hinv-toggle .ht-knob{position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:var(--bean);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;transition:transform .18s ease;z-index:2}
-.hinv-toggle .ht-dot{width:12px;height:12px;border-radius:50%;background:#fff;opacity:.45}
-.hinv-toggle.on .ht-knob{transform:translateX(48px)}
+.hinv-tabs{display:flex;justify-content:center;gap:36px;margin-top:4px}
+.hinv-tab{font-size:17px;font-weight:700;color:var(--ink2);padding:4px 2px 9px;position:relative;letter-spacing:2px}
+.hinv-tab.on{color:var(--ink)}
+.hinv-tab.on::after{content:'';position:absolute;left:50%;transform:translateX(-50%);bottom:0;width:30px;height:3.5px;border-radius:2px;background:var(--bean)}
 .exrow{display:flex;gap:8px;align-items:center;margin-bottom:8px}
 .exrow input{flex:1;border:1.5px solid var(--line);border-radius:8px;padding:7px 10px;background:#fff;outline:none}
 .exrow input:focus{border-color:var(--mist)}
@@ -799,6 +799,7 @@ document.addEventListener('click',e=>{
 /* ===== J5 首页 ===== */
 const PALETTE=['coffee','bean','mist','sage','sand'];
 let homeManage=false;
+let invManage=false; // 图鉴页管理模式
 // 新增事项：选择专属模块类别（类别名按钮，图鉴在图鉴单独页新增）
 function chooseSpecKind(){
   return new Promise(resolve=>{
@@ -834,23 +835,35 @@ async function deleteItemCascade(item){
   const ek=item.kind==='custom'?(item.specKind||'none'):item.kind;
   const isCustom=item.kind==='custom';
   // 共享数据（meals/exercises 等）仅在删除默认事项时清空；自定义事项只删自身记录
-  if(ek==='sew'&&!isCustom){
+  if(isCustom){
+    // 自定义模块：数据归属隔离，只删自己 itemId 名下的记录与专属文件夹
+    for(const st of ['meals','groceries','exercises','bodyMetrics','skills']){
+      for(const r of await DB.all(st))if(r.itemId===item.id)await DB.del(st,r.id);
+    }
+    for(const bk of await DB.all('books')){
+      if(bk.itemId===item.id){imgIds.push(bk.coverId,bk.coverImageId);imgIds.push(...await collectImageIds(bk));await DB.del('books',bk.id);}
+    }
+    for(const b of ['sew-inspiration','sew-tips','dish-gallery','dish-todo','eat-tips']){
+      const es=await DB.byIndex('entries','bucket','c_'+item.id+'-'+b);
+      for(const en of es){imgIds.push(...await collectImageIds(en));await DB.del('entries',en.id);}
+    }
+  }else if(ek==='sew'){
     for(const b of ['sew-inspiration','sew-gallery','sew-tips']){
       const es=await DB.byIndex('entries','bucket',b);
       for(const en of es){imgIds.push(...await collectImageIds(en));await DB.del('entries',en.id);}
     }
-  }else if(ek==='eat'&&!isCustom){
+  }else if(ek==='eat'){
     for(const m of await DB.all('meals'))await DB.del('meals',m.id);
     for(const b of ['dish-gallery','dish-todo']){
       const es=await DB.byIndex('entries','bucket',b);
       for(const en of es){imgIds.push(...await collectImageIds(en));await DB.del('entries',en.id);}
     }
-  }else if(ek==='sport'&&!isCustom){
+  }else if(ek==='sport'){
     for(const x of await DB.all('exercises'))await DB.del('exercises',x.id);
     for(const bm of await DB.all('bodyMetrics'))await DB.del('bodyMetrics',bm.id);
-  }else if(ek==='read'&&!isCustom){
+  }else if(ek==='read'){
     for(const bk of await DB.all('books')){imgIds.push(bk.coverImageId);imgIds.push(...await collectImageIds(bk));await DB.del('books',bk.id);}
-  }else if(ek==='skill'&&!isCustom){
+  }else if(ek==='skill'){
     for(const sk of await DB.all('skills'))await DB.del('skills',sk.id);
   }else if(ek==='inventory'){
     for(const o of await DB.byIndex('inventory','itemId',item.id))await DB.del('inventory',o.id);
@@ -890,7 +903,7 @@ Pages.home={
       el.addEventListener('pointercancel',cancel);
     }
     const el=h('<div><div class="topbar stack"><h1 class="hand" style="font-size:19px">“习惯可以暂停，不能终止”</h1><div class="tb-tools"><span class="sp"></span><button class="btn" data-x="manage">'+(homeManage?'完成':'管理')+'</button><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist'+(homeManage?' managing':'')+'"></div></div>');
-    el.querySelector('.tb-tools').insertBefore(hinvToggle('home'),el.querySelector('.tb-tools .sp'));
+    el.querySelector('.topbar').after(hinvTabs('home'));
     const grid=el.querySelector('.homeviewlist');
     const homeItems=items.filter(it=>!(it.kind==='inventory'||(it.kind==='custom'&&it.specKind==='inventory')));
     if(!homeItems.length)grid.appendChild(h('<div class="empty" style="padding:20px">'+(homeManage?'点下方「＋ 新增事项」创建第一个事项':'点右上角「管理」开始使用')+'</div>'));
@@ -907,7 +920,7 @@ Pages.home={
         }
         if(homeManage)return;
         const ek=it.kind==='custom'?(it.specKind||'none'):it.kind;
-        if(ek==='read')Router.go('readShelf');
+        if(ek==='read')Router.go('readShelf',{itemId:it.id});
         else Router.go('item',{id:it.id});
       };
       bindLongPress(li,()=>openItemMenu(it));
@@ -1005,11 +1018,8 @@ Pages.item={
     const ek0=(item.kind==='custom'?(item.specKind||'none'):item.kind);
     const goals=el.querySelector('.goals');
     if(ek0==='skill')goals.remove();else renderGoalList(goals,item);
-    if(ek0==='eat'){ // 饮食页：🔔提醒换成 🛒 购入食材价格表
+    if(ek0==='eat'){ // 饮食页：🔔提醒移除（价格表等功能在下方功能 chips 行）
       el.querySelector('#remind-btn').remove();
-      const cart=h('<button class="iconbtn" id="grocery-btn" title="购入食材价格表">🛒</button>');
-      cart.onclick=()=>Router.go('grocery');
-      el.querySelector('.tb-tools').appendChild(cart);
     }
     // 月历（运动和技能模块不显示日历；custom 按 specKind 决定）
     const showCal = (item.kind==='custom'?(item.specKind!=='sport'&&item.specKind!=='skill'):(item.kind!=='sport'&&item.kind!=='skill'));
@@ -1071,23 +1081,61 @@ async function renderSpec(host,item,topSlot,marked){
   if(ek==='none'){
     sp.textContent='';
   }else if(ek==='sew'){
-    [['sew-inspiration','灵感收集','💡'],['sew-tips','小 Tip','📝']].forEach(([b,name,ic])=>{
-      topBtn(ic,'打开 '+name,()=>Router.go('folder',{bucket:b,name}));
+    // 自定义模块使用独立文件夹（完全空白初始化，不共享固定模块内容）
+    const bp=item.kind==='custom'?('c_'+item.id+'-'):'';
+    [['inspiration','灵感收集','💡'],['tips','小 Tip','📝']].forEach(([b,name,ic])=>{
+      topBtn(ic,'打开 '+name,()=>Router.go('folder',{bucket:bp+'sew-'+b,name}));
     });
     sp.textContent='';
   }else if(ek==='eat'){
-    topBtn('📅','本周统计',()=>Router.go('weekStat'));
-    topBtn('💰','饮食开销',()=>Router.go('foodCost'));
-    topBtn('🍽','新菜图鉴',()=>Router.go('folder',{bucket:'dish-gallery',name:'新菜图鉴'}));
-    topBtn('📋','待做菜谱',()=>Router.go('folder',{bucket:'dish-todo',name:'待做菜谱'}));
     sp.textContent='';
+    // 自定义模块文件夹独立命名，与固定饮食模块完全隔离
+    const bp=item.kind==='custom'?('c_'+item.id+'-'):'';
+    // 功能入口 chips：文案按模块名生成；长按可隐藏，行尾「＋」恢复
+    const feats=[
+      {k:'weekStat',lab:'本周统计',go:()=>Router.go('weekStat',{itemId:item.id})},
+      {k:'foodCost',lab:item.name+'开销',go:()=>Router.go('foodCost',{itemId:item.id})},
+      {k:'gallery',lab:item.name+'图鉴',go:()=>Router.go('folder',{bucket:bp+'dish-gallery',name:item.name+'图鉴'})},
+      {k:'dishTodo',lab:'待做'+item.name,go:()=>Router.go('folder',{bucket:bp+'dish-todo',name:'待做'+item.name})},
+      {k:'tips',lab:'小 Tip',go:()=>Router.go('folder',{bucket:bp+'eat-tips',name:'小 Tip'})},
+      {k:'grocery',lab:item.name+'价格表',go:()=>Router.go('grocery',{itemId:item.id})}
+    ];
+    const dis=item.disabledFeats||[];
+    const row=h('<div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 12px"></div>');
+    for(const f of feats){
+      if(dis.indexOf(f.k)>=0)continue;
+      const c=h('<button class="tagchip feat-chip" style="padding:6px 14px;font-size:13.5px">'+esc(f.lab)+'</button>');
+      c.onclick=f.go;
+      bindLongPress(c,async()=>{
+        const y=await confirmBox('隐藏「'+esc(f.lab)+'」功能？隐藏后可在行尾「＋」恢复',{danger:true,okText:'隐藏'});
+        if(y){item.disabledFeats=Array.from(new Set((item.disabledFeats||[]).concat(f.k)));await DB.put('items',item);Router.refresh();}
+      });
+      row.appendChild(c);
+    }
+    if(dis.length){
+      const rec=h('<button class="tagchip" style="padding:6px 12px;font-size:13.5px">＋</button>');
+      rec.onclick=()=>{
+        const s=h('<div class="sheet"><h3>恢复功能</h3><div style="display:flex;flex-direction:column;gap:10px" id="fr-list"></div></div>');
+        const m=modal(s);
+        for(const f of feats.filter(f=>dis.indexOf(f.k)>=0)){
+          const b=h('<button class="btn">'+esc(f.lab)+'</button>');
+          b.onclick=async()=>{item.disabledFeats=(item.disabledFeats||[]).filter(k=>k!==f.k);await DB.put('items',item);closeModal(m);Router.refresh();};
+          s.querySelector('#fr-list').appendChild(b);
+        }
+        const no=h('<button class="btn">取消</button>');
+        no.onclick=()=>closeModal(m);
+        s.querySelector('#fr-list').appendChild(no);
+      };
+      row.appendChild(rec);
+    }
+    host.appendChild(row);
   }else if(ek==='sport'){
-    topBtn('⚖','体重三围',()=>Router.go('bodyMetrics'));
-    sp.textContent='运动记录';
+    topBtn('⚖','体重三围',()=>Router.go('bodyMetrics',{itemId:item.id}));
+    sp.textContent=item.name+'记录';
     // 手动添加入口（大加号框，同技能页样式）
-    const addBox=h('<button class="skill-add" style="margin:6px 0 10px"><span class="plus">＋</span><span>添加运动</span></button>');
+    const addBox=h('<button class="skill-add" style="margin:6px 0 10px"><span class="plus">＋</span><span>添加'+esc(item.name)+'</span></button>');
     addBox.onclick=()=>{
-      const sheet=h('<div class="sheet"><h3>添加运动</h3>'
+      const sheet=h('<div class="sheet"><h3>添加'+esc(item.name)+'</h3>'
         +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">日期</label><input type="date" class="input" id="ex-date" value="'+todayKey()+'"></div>'
         +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">运动类型</label><input class="input" id="ex-type" placeholder="如 慢跑、瑜伽"></div>'
         +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">分钟数</label><input type="number" class="input" id="ex-min" placeholder="如 30" min="1"></div>'
@@ -1101,7 +1149,7 @@ async function renderSpec(host,item,topSlot,marked){
         const min=parseInt(sheet.querySelector('#ex-min').value,10);
         if(!type){toast('请输入运动类型');return;}
         if(!min||min<1){toast('请输入分钟数');return;}
-        await DB.put('exercises',{id:uid(),date,time:nowHM(),type,minutes:min});
+        await DB.put('exercises',{id:uid(),itemId:item.id,date,time:nowHM(),type,minutes:min});
         if(sheet.querySelector('#ex-fav').checked){ // 存为常见运动（同名覆盖分钟数）
           item.favSports=item.favSports||[];
           const ex=item.favSports.find(f=>f.name===type);
@@ -1122,7 +1170,7 @@ async function renderSpec(host,item,topSlot,marked){
       for(const f of item.favSports){
         const chip=h('<button class="tagchip" style="padding:6px 14px;font-size:13.5px">'+esc(f.name)+' <b style="font-weight:700">'+(f.minutes||'')+'</b><span style="font-size:11px;color:var(--ink2)">分</span></button>');
         bindDoubleTap(chip,async()=>{ // 双击＝记一条当日运动
-          await DB.put('exercises',{id:uid(),date:todayKey(),time:nowHM(),type:f.name,minutes:f.minutes});
+          await DB.put('exercises',{id:uid(),itemId:item.id,date:todayKey(),time:nowHM(),type:f.name,minutes:f.minutes});
           toast('已打卡：'+f.name+' '+(f.minutes||'')+' 分钟');
           Router.refresh();
         });
@@ -1137,7 +1185,7 @@ async function renderSpec(host,item,topSlot,marked){
     // 流水在前
     const flowBox=h('<div style="margin-top:4px"></div>');
     host.appendChild(flowBox);
-    const exs=(await DB.all('exercises')).sort((a,b)=>b.date.localeCompare(a.date)||(b.time||'').localeCompare(a.time||''));
+    const exs=(await DB.all('exercises')).filter(x=>x.itemId===item.id).sort((a,b)=>b.date.localeCompare(a.date)||(b.time||'').localeCompare(a.time||''));
     const cnt={};for(const x of exs)cnt[x.type||'未分类']=(cnt[x.type||'未分类']||0)+1;
     const stat=h('<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:13px;color:var(--ink2)"></div>');
     const sorted=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);
@@ -1164,13 +1212,13 @@ async function renderSpec(host,item,topSlot,marked){
     const now2=new Date();
     buildCalendar(calHost,{y:now2.getFullYear(),m:now2.getMonth()},smarked,date=>Router.go('day',{itemId:item.id,date}));
   }else if(ek==='skill'){
-    sp.textContent='技能记录';
+    sp.textContent=item.name+'记录';
     const listBox=h('<div style="margin-top:4px"></div>');
     host.appendChild(listBox);
     function openSkillForm(s){
       const isNew=!s;
-      const rec=s||{id:uid(),category:'main',title:'',text:'',time:todayKey(),createdAt:Date.now()};
-      const sheet=h('<div class="sheet"><h3>'+(isNew?'添加新技能':'编辑技能')+'</h3>'
+      const rec=s||{id:uid(),itemId:item.id,category:'main',title:'',text:'',time:todayKey(),createdAt:Date.now()};
+      const sheet=h('<div class="sheet"><h3>'+(isNew?('添加新'+item.name):'编辑'+item.name)+'</h3>'
         +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">时间</label><input type="date" class="input" id="sk-time" value="'+esc(rec.time||todayKey())+'"></div>'
         +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">技能名称</label><input class="input" id="sk-title" value="'+esc(rec.title||'')+'" placeholder="如 学会了缝纽扣"></div>'
         +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">注意事项</label><textarea class="textarea" id="sk-note" style="min-height:64px" placeholder="写点什么…">'+esc(rec.text||'')+'</textarea></div>'
@@ -1197,8 +1245,8 @@ async function renderSpec(host,item,topSlot,marked){
     }
     async function draw(){
       listBox.innerHTML='';
-      const sks=(await DB.all('skills')).sort((a,b)=>((b.time||'').localeCompare(a.time||''))||((b.createdAt||0)-(a.createdAt||0)));
-      if(!sks.length)listBox.appendChild(h('<div class="empty" style="padding:18px 10px">还没有技能，点下方添加</div>'));
+      const sks=(await DB.all('skills')).filter(s=>s.itemId===item.id).sort((a,b)=>((b.time||'').localeCompare(a.time||''))||((b.createdAt||0)-(a.createdAt||0)));
+      if(!sks.length)listBox.appendChild(h('<div class="empty" style="padding:18px 10px">还没有'+esc(item.name)+'，点下方添加</div>'));
       for(const s of sks){
         const row=h('<div class="listitem"><div class="li-main"><div class="li-title"></div><div class="li-sub"></div></div></div>');
         row.querySelector('.li-title').textContent=(s.time?cnDay(s.time)+' · ':'')+s.title;
@@ -1206,7 +1254,7 @@ async function renderSpec(host,item,topSlot,marked){
         row.onclick=()=>openSkillForm(s);
         listBox.appendChild(row);
       }
-      const add=h('<button class="skill-add"><span class="plus">＋</span><span>添加新技能</span></button>');
+      const add=h('<button class="skill-add"><span class="plus">＋</span><span>添加新'+esc(item.name)+'</span></button>');
       add.onclick=()=>openSkillForm(null);
       listBox.appendChild(add);
     }
@@ -1238,8 +1286,9 @@ function mealDishes(m){
   if(Array.isArray(m.dishes))return m.dishes;
   return (m.items||'').split('\n').map(x=>x.trim()).filter(Boolean).map(name=>({name,ing:[]}));
 }
-async function computeFoodKinds(date){
-  const meals=await DB.byIndex('meals','date',date);
+async function computeFoodKinds(date,itemId){
+  let meals=await DB.byIndex('meals','date',date);
+  if(itemId)meals=meals.filter(m=>m.itemId===itemId);
   const set=new Set();
   for(const m of meals)for(const d of mealDishes(m)){
     const tags=(d.ing||[]).filter(Boolean);
@@ -1249,8 +1298,9 @@ async function computeFoodKinds(date){
   return set.size;
 }
 const MEAL_SLOTS=[['breakfast','早餐'],['lunch','午餐'],['dinner','晚餐'],['snack','加餐']];
-async function topMealTags(limit){
-  const meals=await DB.all('meals');
+async function topMealTags(limit,itemId){
+  let meals=await DB.all('meals');
+  if(itemId)meals=meals.filter(m=>m.itemId===itemId);
   const stat={};
   for(const m of meals)for(const d of mealDishes(m))for(const t of (d.ing||[])){
     const k=(t||'').trim();if(!k)continue;
@@ -1261,8 +1311,9 @@ async function topMealTags(limit){
   return Object.keys(stat).map(k=>({tag:k,count:stat[k].count,last:stat[k].last}))
     .sort((a,b)=>b.count-a.count||b.last.localeCompare(a.last)).slice(0,limit);
 }
-async function allMealTags(){
-  const meals=await DB.all('meals');
+async function allMealTags(itemId){
+  let meals=await DB.all('meals');
+  if(itemId)meals=meals.filter(m=>m.itemId===itemId);
   const arr=[];
   for(const m of meals)for(const d of mealDishes(m))for(const t of (d.ing||[])){
     const k=(t||'').trim();if(k&&arr.indexOf(k)<0)arr.push(k);
@@ -1318,22 +1369,23 @@ function openQuickEat(item){ // 快速记录今日饮食：选餐次+菜名（�
     try{
       const names=sheet.querySelector('#qa-name').value.split(/[,，、\n]/).map(x=>x.trim()).filter(Boolean);
       if(!names.length){toast('请填写菜名');return;}
-      const all=await DB.byIndex('meals','date',date);
+      const all=(await DB.byIndex('meals','date',date)).filter(x=>x.itemId===item.id);
       const ex=all.find(x=>x.slot===slot);
       const dishes=(ex?mealDishes(ex):[]).concat(names.map(n=>({name:n,ing:[]})));
-      await DB.put('meals',{id:ex?ex.id:uid(),date,slot,dishes});
+      await DB.put('meals',{id:ex?ex.id:uid(),itemId:item.id,date,slot,dishes});
       const r=await getRecord(item.id,date);
       if(!r)await DB.put('records',{id:uid(),itemId:item.id,date,text:'',imageIds:[]});
       closeModal(m);toast('已记录');Router.refresh();
     }finally{qaSaving=false;}
   };
 }
-async function renderMealSection(body,date){
-  const meals=await DB.byIndex('meals','date',date);
+async function renderMealSection(body,date,itemId){
+  let meals=await DB.byIndex('meals','date',date);
+  if(itemId)meals=meals.filter(m=>m.itemId===itemId);
   const bySlot={};for(const m of meals)bySlot[m.slot]=m;
   const counts=h('<div class="ksum">今日食材 0 种</div>');
   body.appendChild(counts);
-  const updateCount=async()=>{counts.textContent='今日食材 '+await computeFoodKinds(date)+' 种';};
+  const updateCount=async()=>{counts.textContent='今日食材 '+await computeFoodKinds(date,itemId)+' 种';};
   function openDishForm(meal,existing,dishes,dIdx){
     const isNew=dIdx<0;
     const dish=isNew?{name:'',ing:[]}:dishes[dIdx];
@@ -1381,7 +1433,7 @@ async function renderMealSection(body,date){
       resBox.innerHTML='';
       if(!q){resBox.style.display='none';return;}
       resBox.style.display='flex';
-      allMealTags().then(tags=>{
+      allMealTags(itemId).then(tags=>{
         const cands=tags.filter(t=>t.indexOf(q)===0&&sel.indexOf(t)<0).slice(0,8);
         cands.forEach(t=>resBox.appendChild(chip(t,()=>{if(sel.indexOf(t)<0)sel.push(t);searchInp.value='';drawAll();drawSearch();})));
         if(q&&sel.indexOf(q)<0&&tags.indexOf(q)<0){
@@ -1398,7 +1450,7 @@ async function renderMealSection(body,date){
         searchInp.value='';drawAll();drawSearch();
       }
     });
-    topMealTags(10).then(list=>{
+    topMealTags(10,itemId).then(list=>{
       histCache=list.map(x=>x.tag);
       drawAll();
     });
@@ -1408,7 +1460,7 @@ async function renderMealSection(body,date){
     if(delBtn)delBtn.onclick=async()=>{
       dishes.splice(dIdx,1);
       if(!dishes.length&&existing){await DB.del('meals',existing.id);existing._gone=true;}
-      else await DB.put('meals',{id:meal.id,date,slot:meal.slot,dishes});
+      else await DB.put('meals',{id:meal.id,itemId,date,slot:meal.slot,dishes});
       closeModal(m0);toast('已删除');
       refreshRows();
     };
@@ -1419,7 +1471,7 @@ async function renderMealSection(body,date){
       const price=isNaN(pv)?null:pv;const market=isNaN(mkv)?null:mkv; // 价格仅记在第一道菜上
       if(isNew){for(let k=0;k<parts.length;k++)dishes.push({name:parts[k],ing:[...new Set(sel)],price:k===0?price:null,market:k===0?market:null});}
       else{dishes[dIdx]={name:parts[0],ing:[...new Set(sel)],price,market};for(let k=1;k<parts.length;k++)dishes.push({name:parts[k],ing:[],price:null,market:null});}
-      await DB.put('meals',{id:meal.id,date,slot:meal.slot,dishes});
+      await DB.put('meals',{id:meal.id,itemId,date,slot:meal.slot,dishes});
       closeModal(m0);
       toast(parts.length>1?'已添加 '+parts.length+' 道菜':(isNew?'已添加菜名':'已保存'));
       refreshRows();
@@ -1434,7 +1486,7 @@ async function renderMealSection(body,date){
     const m=modal(sheet);
     Img.grid(sheet.querySelector('#mp-grid'),ids,{max:3,onChange:async removed=>{
       if(removed)await DB.del('images',removed);
-      if(ids.length||dishes.length)await DB.put('meals',{id:meal.id,date,slot:meal.slot,dishes,imageIds:ids});
+      if(ids.length||dishes.length)await DB.put('meals',{id:meal.id,itemId,date,slot:meal.slot,dishes,imageIds:ids});
       else await DB.del('meals',meal.id);
       refreshRows();
     }});
@@ -1449,9 +1501,10 @@ async function renderMealSection(body,date){
       const box=rowMap[slot];
       if(!box)continue;
       box.innerHTML='';
-      const all=await DB.byIndex('meals','date',date);
+      let all=await DB.byIndex('meals','date',date);
+      if(itemId)all=all.filter(x=>x.itemId===itemId);
       const existing=all.find(x=>x.slot===slot);
-      const meal=existing||{id:uid(),date,slot};
+      const meal=existing||{id:uid(),itemId,date,slot};
       const dishes=mealDishes(meal);
       const top=h('<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"></div>');
       top.appendChild(h('<div class="mlabel">'+label+'</div>'));
@@ -1492,15 +1545,18 @@ async function renderMealSection(body,date){
   }
   await refreshRows();
 }
-async function renderExerciseSection(body,date){
-  const exs=await DB.byIndex('exercises','date',date);
+async function renderExerciseSection(body,date,itemId){
+  let exs=await DB.byIndex('exercises','date',date);
+  if(itemId)exs=exs.filter(x=>x.itemId===itemId);
   const wrap=h('<div style="margin-top:16px"><div style="font-size:13px;color:var(--ink2);margin-bottom:6px">今日运动</div><div class="exrow"><input data-f="type" placeholder="运动类型"><input data-f="min" placeholder="分钟数" style="flex:none;width:80px"><button class="btn primary" data-x="add">添加</button></div><div class="exlist"></div></div>');
   const inpT=wrap.querySelector('[data-f=type]');
   const inpM=wrap.querySelector('[data-f=min]');
   const list=wrap.querySelector('.exlist');
   async function draw(){
     list.innerHTML='';
-    const all=(await DB.byIndex('exercises','date',date)).sort((a,b)=>a.time.localeCompare(b.time));
+    let all=await DB.byIndex('exercises','date',date);
+    if(itemId)all=all.filter(x=>x.itemId===itemId);
+    all=all.sort((a,b)=>a.time.localeCompare(b.time));
     if(!all.length)list.appendChild(h('<div class="empty" style="padding:10px">还没有运动</div>'));
     for(const x of all){
       const it=h('<div class="exitem"><span></span><button>删</button></div>');
@@ -1514,7 +1570,7 @@ async function renderExerciseSection(body,date){
     const type=inpT.value.trim();const m=parseInt(inpM.value,10);
     if(!type){toast('请输入运动类型');return;}
     if(!m||m<1){toast('请输入分钟数');return;}
-    await DB.put('exercises',{id:uid(),date,time:nowHM(),type,minutes:m});
+    await DB.put('exercises',{id:uid(),itemId,date,time:nowHM(),type,minutes:m});
     inpT.value='';inpM.value='';draw();
   };
   body.appendChild(wrap);await draw();
@@ -1530,7 +1586,7 @@ Pages.day={
     const body=el.querySelector('.daybody');
     const ekDay=item.kind==='custom'?(item.specKind||'none'):item.kind;
     if(ekDay==='eat'){
-      await renderMealSection(body,p.date);
+      await renderMealSection(body,p.date,item.id);
       // 今日照片（≤3张，与其他模块一致）
       const ph=h('<div style="margin-top:16px"><div style="font-size:13px;color:var(--ink2);margin-bottom:6px">今日照片</div></div>');
       const pbox=h('<div></div>');
@@ -1553,7 +1609,7 @@ Pages.day={
       }});
     }
     if(ekDay==='sport'){
-      await renderExerciseSection(body,p.date);
+      await renderExerciseSection(body,p.date,item.id);
     }
     return el;
   }
@@ -1763,10 +1819,12 @@ async function clearAllDB(){
 
 /* ===== 物品使用打卡图鉴 ===== */
 let invTag=''; // 当前筛选标签，'' 表示全部
-function hinvToggle(mode){ // 打卡⇄图鉴滑动切换开关（两页顶栏同一位置；mode 为当前所在页）
-  const t=h('<button class="hinv-toggle'+(mode==='inv'?' on':'')+'" title="'+(mode==='inv'?'切换到打卡页':'切换到图鉴页')+'" aria-label="打卡与图鉴切换"><span class="ht-lab">打卡</span><span class="ht-lab">图鉴</span><span class="ht-knob"><span class="ht-dot"></span></span></button>');
-  t.onclick=()=>{Router.go(mode==='inv'?'home':'invHub');};
-  return t;
+function hinvTabs(mode){ // 打卡⇄图鉴 tab 栏（居中黑体字，当前页下方红色横线）
+  const bar=h('<div class="hinv-tabs"><button class="hinv-tab'+(mode==='home'?' on':'')+'" data-t="home">打卡</button><button class="hinv-tab'+(mode==='inv'?' on':'')+'" data-t="inv">图鉴</button></div>');
+  bar.querySelectorAll('.hinv-tab').forEach(b=>{
+    b.onclick=()=>{const t=b.dataset.t;if(t!==mode)Router.go(t==='inv'?'invHub':'home');};
+  });
+  return bar;
 }
 /* ===== 目标列表（长/短期合并，短期倒计时）===== */
 function goalDaysLeft(g){ // 剩余天数 =（创建日+天数）- 今天；0=今天截止，负数=已到期
@@ -1886,17 +1944,28 @@ Pages.invHub={
   async render(){
     const allItems=(await DB.all('items')).sort((a,b)=>a.order-b.order);
     const invItems=allItems.filter(it=>it.kind==='inventory'||(it.kind==='custom'&&it.specKind==='inventory'));
-    const el=h('<div><div class="topbar stack"><h1 class="hand" style="font-size:19px">“挥霍和珍惜是同一件事情”</h1><div class="tb-tools" id="invhub-tools"></div></div><div class="homeviewlist" id="invhub-list" style="padding-top:6px"></div></div>');
-    el.querySelector('#invhub-tools').appendChild(hinvToggle('inv'));
+    const el=h('<div><div class="topbar stack"><h1 class="hand" style="font-size:19px">“挥霍和珍惜是同一件事情”</h1><div class="tb-tools" id="invhub-tools"><span class="sp"></span><button class="btn" data-x="manage">'+(invManage?'完成':'管理')+'</button><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist" id="invhub-list" style="padding-top:6px"></div></div>');
+    el.querySelector('.topbar').after(hinvTabs('inv'));
+    el.querySelector('[data-x=settings]').onclick=()=>Router.go('settings');
+    el.querySelector('[data-x=manage]').onclick=()=>{invManage=!invManage;Router.refresh();};
     const list=el.querySelector('#invhub-list');
     if(!invItems.length)list.appendChild(h('<div class="empty" style="padding:20px">还没有图鉴，点下方「＋ 新增图鉴」创建</div>'));
     for(const it of invItems){
       const cnt=(await DB.byIndex('inventory','itemId',it.id)).length;
-      const li=h('<div class="invhubrow" style="--c:var(--'+(it.color||'sand')+')"><div class="ih-main"><div class="ih-name hand">'+esc(it.name)+'</div><div class="ih-sub">'+cnt+' 件物品</div></div><span class="ih-arrow">›</span></div>');
-      li.onclick=()=>Router.go('inventory',{itemId:it.id});
+      const li=h('<div class="invhubrow" style="--c:var(--'+(it.color||'sand')+')"><div class="ih-main"><div class="ih-name hand">'+esc(it.name)+'</div><div class="ih-sub">'+cnt+' 件物品</div></div>'+(invManage&&!it.builtin?'<button class="btn" data-op="del" style="padding:6px 12px;font-size:13px;color:var(--danger);flex:none">删除</button>':'')+'<span class="ih-arrow">›</span></div>');
+      li.onclick=async e=>{
+        const op=e.target.closest('[data-op=del]');
+        if(op){
+          const yes=await confirmBox('删除「'+it.name+'」将同时删除全部物品条目，且无法恢复。确定删除？',{danger:true,okText:'删除'});
+          if(yes){await deleteItemCascade(it);toast('已删除「'+it.name+'」');Router.refresh();}
+          return;
+        }
+        if(invManage)return;
+        Router.go('inventory',{itemId:it.id});
+      };
       // 长按菜单：重命名/删除（默认图鉴不可删）
       let lp=null;
-      li.addEventListener('pointerdown',()=>{lp=setTimeout(()=>{lp=null;
+      li.addEventListener('pointerdown',()=>{if(invManage)return;lp=setTimeout(()=>{lp=null;
         const s=h('<div class="sheet"><h3>'+esc(it.name)+'</h3><div style="display:flex;flex-direction:column;gap:10px"><button class="btn" id="ih-rename">✏ 重命名</button>'+(it.builtin?'':'<button class="btn danger" id="ih-del">🗑 删除图鉴</button>')+'<button class="btn" id="ih-no">取消</button></div></div>');
         const m=modal(s);
         s.querySelector('#ih-no').onclick=()=>closeModal(m);
@@ -2151,10 +2220,12 @@ Pages.settings={
 
 /* ===== J9 周统计页 ===== */
 Pages.weekStat={
-  async render(){
+  async render(p){
     // 本周一为起点
     let wkStart=weekStart(todayKey());
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><button class="iconbtn" data-x="prev">‹</button><h1 class="hand">本周统计</h1><button class="iconbtn" data-x="next">›</button></div><div id="wk-body"></div></div>');
+    const item=p&&p.itemId?await DB.get('items',p.itemId):null;
+    const itemId=item?item.id:null;
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><button class="iconbtn" data-x="prev">‹</button><h1 class="hand">'+(item?esc(item.name)+' · ':'')+'本周统计</h1><button class="iconbtn" data-x="next">›</button></div><div id="wk-body"></div></div>');
     const body=el.querySelector('#wk-body');
     async function redraw(){
       body.innerHTML='';
@@ -2163,7 +2234,8 @@ Pages.weekStat={
       const items=[]; // 本周食材标签去重
       for(let i=0;i<7;i++){
         const d=weekDays[i];
-        const meals=await DB.byIndex('meals','date',d);
+        let meals=await DB.byIndex('meals','date',d);
+        if(itemId)meals=meals.filter(m=>m.itemId===itemId);
         const bySlot={};for(const m of meals)bySlot[m.slot]=m;
         const card=h('<div class="wcard"><div class="wday">'+cnDay(d)+'（'+['一','二','三','四','五','六','日'][i]+'）</div></div>');
         const dayTags=new Set();
@@ -2205,16 +2277,19 @@ Pages.weekStat={
 
 /* ===== 饮食开销月统计页 ===== */
 Pages.foodCost={
-  async render(){
+  async render(p){
     const now=new Date();
     let state={y:now.getFullYear(),m:now.getMonth()};
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><button class="iconbtn" data-x="prev">‹</button><h1 class="hand">饮食开销</h1><button class="iconbtn" data-x="next">›</button></div><div id="fc-body" style="padding:4px 16px 30px"></div></div>');
+    const item=p&&p.itemId?await DB.get('items',p.itemId):null;
+    const itemId=item?item.id:null;
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><button class="iconbtn" data-x="prev">‹</button><h1 class="hand">'+(item?esc(item.name):'饮食')+'开销</h1><button class="iconbtn" data-x="next">›</button></div><div id="fc-body" style="padding:4px 16px 30px"></div></div>');
     const body=el.querySelector('#fc-body');
     async function redraw(){
       body.innerHTML='';
       const ym=state.y+'-'+String(state.m+1).padStart(2,'0');
       body.appendChild(h('<div class="fmonth">'+state.y+'年'+(state.m+1)+'月</div>'));
-      const all=await DB.all('meals');
+      let all=await DB.all('meals');
+      if(itemId)all=all.filter(x=>x.itemId===itemId);
       const month=all.filter(x=>(x.date||'').indexOf(ym)===0);
       let cost=0,market=0;
       const byDate={};
@@ -2249,11 +2324,11 @@ Pages.foodCost={
 };
 
 /* ===== 购入食材价格表页 ===== */
-function openGroceryForm(onSaved){ // 记一笔：单价=总价÷数量自动算出，可手动覆盖
+function openGroceryForm(onSaved,itemId){ // 记一笔：单价=总价÷数量自动算出，可手动覆盖
   const sheet=h('<div class="sheet"><h3>记一笔食材</h3>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">食材名称</label><input class="input" id="gr-name" placeholder="如 鸡蛋"></div>'
     +'<div style="display:flex;gap:10px"><div style="flex:1;margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">总价（元）</label><input type="number" step="0.01" min="0" class="input" id="gr-total" placeholder="如 15.8"></div>'
-    +'<div style="flex:1;margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">数量</label><input type="number" step="0.01" min="0" class="input" id="gr-qty" placeholder="如 2（斤/盒/袋）"></div></div>'
+    +'<div style="flex:1;margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">数量（kg）</label><input type="number" step="0.01" min="0" class="input" id="gr-qty" placeholder="如 2（默认按 kg）"></div></div>'
     +'<div style="display:flex;gap:10px"><div style="flex:1;margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">单价（自动算，可改）</label><input type="number" step="0.01" min="0" class="input" id="gr-price" placeholder="自动计算"></div>'
     +'<div style="flex:1;margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">时间</label><input type="date" class="input" id="gr-date"></div></div>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">备注</label><input class="input" id="gr-note" placeholder="选填"></div>'
@@ -2271,7 +2346,7 @@ function openGroceryForm(onSaved){ // 记一笔：单价=总价÷数量自动算
   sheet.querySelector('[data-x="ok"]').onclick=async()=>{
     const name=sheet.querySelector('#gr-name').value.trim();
     if(!name){toast('请填写食材名称');return;}
-    const rec={id:uid(),name:name,
+    const rec={id:uid(),itemId:itemId||null,name:name,
       total:tIn.value===''?null:parseFloat(tIn.value),
       qty:qIn.value===''?null:parseFloat(qIn.value),
       price:pIn.value===''?null:parseFloat(pIn.value),
@@ -2284,27 +2359,31 @@ function openGroceryForm(onSaved){ // 记一笔：单价=总价÷数量自动算
   };
 }
 Pages.grocery={
-  async render(){
+  async render(p){
     const now=new Date();
     let state={y:now.getFullYear(),m:now.getMonth()};
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><button class="iconbtn" data-x="prev">‹</button><h1 class="hand">购入食材价格表</h1><button class="iconbtn" data-x="next">›</button></div><div id="gr-body" style="padding:4px 16px 30px"></div></div>');
+    const item=p&&p.itemId?await DB.get('items',p.itemId):null;
+    const itemId=item?item.id:null;
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><button class="iconbtn" data-x="prev">‹</button><h1 class="hand">'+(item?esc(item.name):'购入食材')+'价格表</h1><button class="iconbtn" data-x="next">›</button></div><div id="gr-body" style="padding:4px 16px 30px"></div></div>');
     const body=el.querySelector('#gr-body');
     async function redraw(){
       body.innerHTML='';
       const ym=state.y+'-'+String(state.m+1).padStart(2,'0');
       body.appendChild(h('<div class="fmonth">'+state.y+'年'+(state.m+1)+'月</div>'));
-      const all=(await DB.all('groceries')).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+      let all=await DB.all('groceries');
+      if(itemId)all=all.filter(x=>x.itemId===itemId);
+      all=all.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
       const month=all.filter(x=>(x.date||'').indexOf(ym)===0);
       const total=month.reduce((s,x)=>s+(parseFloat(x.total)||0),0);
       body.appendChild(h('<div class="fchead"><div class="fccard"><div class="fclabel">本月购入合计</div><div class="fcnum">¥'+total.toFixed(2)+'</div></div><div class="fccard"><div class="fclabel">本月笔数</div><div class="fcnum">'+month.length+'</div></div></div>'));
       const add=h('<button class="skill-add" style="margin:6px 0 12px"><span class="plus">＋</span><span>记一笔</span></button>');
-      add.onclick=()=>openGroceryForm(redraw);
+      add.onclick=()=>openGroceryForm(redraw,itemId);
       body.appendChild(add);
       if(!month.length){body.appendChild(h('<div class="empty">本月还没有购入记录</div>'));return;}
       for(const x of month){
         const unit=(parseFloat(x.total)||0)/(parseFloat(x.qty)||1);
-        const priceStr=(x.price!==undefined&&x.price!==null&&x.price!=='')?'¥'+(+x.price).toFixed(2):'¥'+unit.toFixed(2)+'/单位';
-        const qtyStr=(x.qty!==undefined&&x.qty!==null&&x.qty!=='')?x.qty:'-';
+        const priceStr=(x.price!==undefined&&x.price!==null&&x.price!=='')?'¥'+(+x.price).toFixed(2):'¥'+unit.toFixed(2)+'/kg';
+        const qtyStr=(x.qty!==undefined&&x.qty!==null&&x.qty!=='')?x.qty+' kg':'-';
         const row=h('<div class="listitem"><div class="li-main"><div class="li-title">'+esc(x.name||'未命名食材')+'</div><div class="li-sub">'+esc(x.date||'')+' · 数量 '+esc(String(qtyStr))+' · 单价 '+priceStr+(x.note?' · '+esc(x.note):'')+'</div></div><button class="btn" style="padding:4px 10px;font-size:12px;color:var(--danger);flex:none">删</button></div>');
         row.querySelector('button').onclick=async()=>{
           const y=await confirmBox('删除「'+esc(x.name||'未命名食材')+'」这笔记录？',{danger:true,okText:'删除'});
@@ -2322,12 +2401,16 @@ Pages.grocery={
 
 /* ===== J10 体重三围页 ===== */
 Pages.bodyMetrics={
-  async render(){
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">体重三围</h1><button class="iconbtn" data-x="add">＋</button></div><div id="bm-body"></div></div>');
+  async render(p){
+    const item=p&&p.itemId?await DB.get('items',p.itemId):null;
+    const itemId=item?item.id:null;
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+(item?esc(item.name)+' · ':'')+'体重三围</h1><button class="iconbtn" data-x="add">＋</button></div><div id="bm-body"></div></div>');
     const body=el.querySelector('#bm-body');
     async function redraw(){
       body.innerHTML='';
-      const list=(await DB.all('bodyMetrics')).sort((a,b)=>b.date.localeCompare(a.date));
+      let list=await DB.all('bodyMetrics');
+      if(itemId)list=list.filter(x=>x.itemId===itemId);
+      list=list.sort((a,b)=>b.date.localeCompare(a.date));
       // 新增表单
       const form=h('<div class="bmform"><div class="field"><label>日期</label><input class="input" id="bm-date"></div><div class="field"><label>体重（kg）</label><input class="input" id="bm-weight" type="number" step="0.1"></div><div class="field"><label>腰围（cm）</label><input class="input" id="bm-waist" type="number" step="0.1"></div><div class="field"><label>胸围（cm）</label><input class="input" id="bm-chest" type="number" step="0.1"></div><div class="field"><label>臀围（cm）</label><input class="input" id="bm-hip" type="number" step="0.1"></div><div class="field"><label>备注</label><input class="input" id="bm-note"></div><div class="btnrow"><button class="btn primary" id="bm-save">保存</button></div></div>');
       form.querySelector('#bm-date').value=todayKey();
@@ -2339,10 +2422,10 @@ Pages.bodyMetrics={
         const chest=parseFloat(form.querySelector('#bm-chest').value)||0;
         const hip=parseFloat(form.querySelector('#bm-hip').value)||0;
         const note=form.querySelector('#bm-note').value;
-        // 同日覆盖
+        // 同日覆盖（只覆盖当前模块自己的记录）
         const existing=await DB.byIndex('bodyMetrics','date',d);
-        for(const e of existing)await DB.del('bodyMetrics',e.id);
-        await DB.put('bodyMetrics',{id:uid(),date:d,weight:w,waist,chest,hip,note});
+        for(const e of existing){if(!itemId||e.itemId===itemId)await DB.del('bodyMetrics',e.id);}
+        await DB.put('bodyMetrics',{id:uid(),itemId:itemId||null,date:d,weight:w,waist,chest,hip,note});
         toast('已保存');redraw();
       };
       body.appendChild(form);
@@ -2372,9 +2455,12 @@ Pages.bodyMetrics={
 
 /* ===== J11 书架页 ===== */
 Pages.readShelf={
-  async render(){
+  async render(p){
+    const item=p&&p.itemId?await DB.get('items',p.itemId):null;
+    const itemId=item?item.id:null;
+    const shelfTitle=item&&item.kind==='custom'?('我的'+item.name):'我的书架';
     let tab='read';
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">我的书架</h1></div><div style="padding:0 16px 8px"><div class="seg" id="shelf-tabs"><button data-t="read" class="on">已看</button><button data-t="want">想看</button></div></div><div class="shelf" id="shelf"></div></div>');
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(shelfTitle)+'</h1></div><div style="padding:0 16px 8px"><div class="seg" id="shelf-tabs"><button data-t="read" class="on">已看</button><button data-t="want">想看</button></div></div><div class="shelf" id="shelf"></div></div>');
     const shelf=el.querySelector('#shelf');
     const tabs=el.querySelector('#shelf-tabs');
     tabs.addEventListener('click',e=>{
@@ -2385,9 +2471,11 @@ Pages.readShelf={
     });
     async function redraw(){
       shelf.innerHTML='';
-      const books=(await DB.all('books')).filter(b=>(b.status||'read')===tab).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-      const wantN=(await DB.all('books')).filter(b=>(b.status||'read')==='want').length;
-      const readN=(await DB.all('books')).filter(b=>(b.status||'read')==='read').length;
+      let allBooks=await DB.all('books');
+      if(itemId)allBooks=allBooks.filter(b=>b.itemId===itemId);
+      const books=allBooks.filter(b=>(b.status||'read')===tab).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+      const wantN=allBooks.filter(b=>(b.status||'read')==='want').length;
+      const readN=allBooks.filter(b=>(b.status||'read')==='read').length;
       tabs.querySelector('[data-t=want]').textContent='想看 '+wantN;
       tabs.querySelector('[data-t=read]').textContent='已看 '+readN;
       if(!books.length)shelf.appendChild(h('<div class="empty" style="grid-column:1/-1">'+(tab==='want'?'想看的书会显示在这里':'还没有书籍记录')+'</div>'));
@@ -2434,7 +2522,7 @@ Pages.readShelf={
       add.onclick=async()=>{
         const name=await promptBox('书名（添加到「'+(tab==='want'?'想看':'已看')+'」）');
         if(!name)return;
-        const nb={id:uid(),title:name,author:'',status:tab,rating:0,review:'',coverId:'',createdAt:Date.now()};
+        const nb={id:uid(),itemId:itemId||null,title:name,author:'',status:tab,rating:0,review:'',coverId:'',createdAt:Date.now()};
         await DB.put('books',nb);
         Router.go('bookDetail',{id:nb.id});
       };
@@ -2543,6 +2631,17 @@ async function ensureBuiltin(){ // 固定模块自愈：缺失时优先把同名
     }
   }
 }
+async function migrateOwnership(){ // 数据归属隔离：历史无 itemId 的共享记录归固定模块，自定义模块数据保持空白
+  const items=await DB.all('items');
+  const fixed={};for(const it of items)if(it.builtin)fixed[it.kind]=it.id;
+  const map={meals:'eat',groceries:'eat',exercises:'sport',bodyMetrics:'sport',books:'read',skills:'skill'};
+  for(const [store,kind] of Object.entries(map)){
+    if(!fixed[kind])continue;
+    for(const r of await DB.all(store)){
+      if(!r.itemId){r.itemId=fixed[kind];await DB.put(store,r);}
+    }
+  }
+}
 (async function boot(){
   try{await DB.open();}
   catch(e){
@@ -2551,6 +2650,7 @@ async function ensureBuiltin(){ // 固定模块自愈：缺失时优先把同名
   }
   await seedIfEmpty();
   await ensureBuiltin();
+  await migrateOwnership();
   Router.start();
 })();
 
