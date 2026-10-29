@@ -401,7 +401,7 @@ const Cloud=(()=>{
   const SYNC_EVERY=300000; // 后台同步间隔 5 分钟
   const STORES=['items','records','entries','meals','exercises','bodyMetrics','books','skills','inventory','groceries','images','settings'];
   const keyOf=(store,val)=>val[store==='settings'?'key':'id'];
-  let flushing=false,lastPullOk=0,lastErr='',pulling=false;
+  let flushing=false,lastPullOk=0,lastErr='',pulling=false,exitBound=false;
 
   /* ---- 配置：{mode:'gh',token,repo} 或 {mode:'worker',base} ---- */
   function config(){
@@ -675,6 +675,13 @@ const Cloud=(()=>{
       if(flushing||pulling)return;
       try{await pull();await flushOutbox();}catch(e){}
     },SYNC_EVERY);
+    // 退出前自动保存：页面隐藏或关闭时立即推送待同步数据（尽力而为，只注册一次）
+    if(!exitBound){
+      exitBound=true;
+      const exitFlush=()=>{try{flushOutbox();}catch(e){}};
+      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')exitFlush();});
+      window.addEventListener('pagehide',exitFlush);
+    }
   }
 
   return {config,setCfg,base,enabled,status,enqueue,flushOutbox,pull,fullUpload,init,blobToB64,b64ToBlob};
@@ -871,6 +878,95 @@ async function deleteItemCascade(item){
   await deleteImages(imgIds);
   await DB.del('items',item.id);
 }
+/* ===== 首页全局搜索：按关键词搜全部相关记录 ===== */
+function bucketDisplayName(bucket,byId){ // 由 bucket 推导文件夹显示名
+  const b=bucket||'';
+  let owner=null;
+  if(b.startsWith('c_')){
+    const rest=b.slice(2),dash=rest.indexOf('-');
+    if(dash>0)owner=byId[rest.slice(0,dash)];
+  }
+  const nm=owner?owner.name:'';
+  if(b==='sew-inspiration'||b.endsWith('-sew-inspiration'))return '灵感收集';
+  if(b==='sew-tips'||b.endsWith('-sew-tips')||b==='eat-tips'||b.endsWith('-eat-tips'))return '小 Tip';
+  if(b==='dish-gallery'||b.endsWith('-dish-gallery'))return nm?(nm+'图鉴'):'图鉴';
+  if(b==='dish-todo'||b.endsWith('-dish-todo'))return nm?('待做'+nm):'待做清单';
+  return '条目';
+}
+async function globalSearch(q){
+  q=(q||'').trim().toLowerCase();
+  if(!q)return [];
+  const items=await DB.all('items');
+  const byId={};items.forEach(i=>byId[i.id]=i);
+  const itemName=id=>{const it=byId[id];return it?it.name:'记录';};
+  const res=[];
+  const push=r=>{if(res.length<200)res.push(r);};
+  // 模块名
+  for(const it of items){
+    if((it.name||'').toLowerCase().indexOf(q)>=0)
+      push({t:'模块',label:it.name,date:'',text:(it.kind==='custom'&&it.specKind?({eat:'饮食',sew:'缝纫',sport:'运动',skill:'技能',read:'阅读',inventory:'图鉴'}[it.specKind]||'自定义模块'):(it.kind==='inventory'?'图鉴':'打卡模块')),go:()=>Router.go(it.kind==='custom'&&it.specKind==='read'?'readShelf':'item',{itemId:it.id,id:it.id})});
+  }
+  // 打卡记录文本
+  for(const r of await DB.all('records')){
+    if(r.text&&r.text.toLowerCase().indexOf(q)>=0)
+      push({t:'记录',label:itemName(r.itemId),date:r.date,text:r.text,go:()=>Router.go('day',{itemId:r.itemId,date:r.date})});
+  }
+  // 饮食菜名
+  for(const m of await DB.all('meals')){
+    const names=(m.dishes||[]).map(d=>d.name).filter(n=>n&&n.toLowerCase().indexOf(q)>=0);
+    if(names.length)
+      push({t:'菜品',label:itemName(m.itemId),date:m.date,text:names.join('、'),go:()=>Router.go('day',{itemId:m.itemId,date:m.date})});
+  }
+  // 运动
+  for(const x of await DB.all('exercises')){
+    if((x.type||'').toLowerCase().indexOf(q)>=0)
+      push({t:'运动',label:itemName(x.itemId),date:x.date,text:(x.type||'')+' '+(x.minutes||0)+' 分钟',go:()=>Router.go('day',{itemId:x.itemId,date:x.date})});
+  }
+  // 文件夹条目（灵感/Tip/图鉴/待做）
+  for(const e of await DB.all('entries')){
+    if(((e.title||'')+' '+(e.text||'')).toLowerCase().indexOf(q)>=0){
+      const nm=bucketDisplayName(e.bucket,byId);
+      push({t:'条目',label:nm,date:e.createdAt?new Date(e.createdAt).toISOString().slice(0,10):'',text:e.title||(e.text||''),go:()=>Router.go('folder',{bucket:e.bucket,name:nm})});
+    }
+  }
+  // 书籍
+  for(const b of await DB.all('books')){
+    if(((b.title||'')+' '+(b.author||'')+' '+(b.review||'')).toLowerCase().indexOf(q)>=0)
+      push({t:'书籍',label:itemName(b.itemId),date:'',text:b.title+(b.author?' · '+b.author:''),go:()=>Router.go('bookDetail',{id:b.id})});
+  }
+  // 技能
+  for(const s of await DB.all('skills')){
+    if(((s.title||'')+' '+(s.text||'')).toLowerCase().indexOf(q)>=0)
+      push({t:'技能',label:itemName(s.itemId),date:s.time||'',text:s.title,go:()=>Router.go('item',{id:s.itemId,itemId:s.itemId})});
+  }
+  // 物品图鉴
+  for(const o of await DB.all('inventory')){
+    if(((o.name||'')+' '+(o.tag||'')+' '+(o.reason||'')).toLowerCase().indexOf(q)>=0)
+      push({t:'物品',label:itemName(o.itemId),date:'',text:o.name+(o.tag?' · '+o.tag:''),go:()=>Router.go('inventory',{itemId:o.itemId})});
+  }
+  // 食材价格
+  for(const g of await DB.all('groceries')){
+    if(((g.name||'')+' '+(g.note||'')).toLowerCase().indexOf(q)>=0)
+      push({t:'食材',label:itemName(g.itemId),date:g.date||'',text:g.name+(g.price?(' ¥'+g.price):''),go:()=>Router.go('grocery',{itemId:g.itemId})});
+  }
+  return res;
+}
+function renderSearchResults(host,rows,q){
+  host.innerHTML='';
+  host.classList.remove('managing');
+  if(!rows.length){
+    host.appendChild(h('<div class="empty" style="padding:20px">没有找到与「'+esc(q)+'」相关的记录</div>'));
+    return;
+  }
+  host.appendChild(h('<div style="font-size:12.5px;color:var(--ink2);padding:2px 4px 0">找到 '+rows.length+' 条与「'+esc(q)+'」相关的记录</div>'));
+  for(const r of rows){
+    const li=h('<div class="hlistitem" style="--c:var(--sand)"><div class="libody"><div class="liname" style="font-size:14.5px"></div><div class="list"></div></div><span style="color:var(--ink2);flex:none">›</span></div>');
+    li.querySelector('.liname').textContent='['+r.t+'] '+(r.label||'')+(r.date?(' · '+r.date):'');
+    li.querySelector('.list').textContent=(r.text||'').slice(0,80);
+    li.onclick=r.go;
+    host.appendChild(li);
+  }
+}
 Pages.home={
   async render(){
     const items=(await DB.all('items')).sort((a,b)=>a.order-b.order);
@@ -902,9 +998,20 @@ Pages.home={
       el.addEventListener('pointerleave',cancel);
       el.addEventListener('pointercancel',cancel);
     }
-    const el=h('<div><div class="topbar stack"><h1 class="hand" style="font-size:19px">“习惯可以暂停，不能终止”</h1><div class="tb-tools"><span class="sp"></span><button class="btn" data-x="manage">'+(homeManage?'完成':'管理')+'</button><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist'+(homeManage?' managing':'')+'"></div></div>');
+    const el=h('<div><div class="topbar stack"><h1 class="hand" style="font-size:19px">“习惯可以暂停，不能终止”</h1><div class="tb-tools"><input type="search" id="home-search" class="input" placeholder="搜索全部记录…" style="flex:1;min-width:0;padding:8px 12px;border-radius:999px;font-size:13.5px"><button class="btn" data-x="manage">'+(homeManage?'完成':'管理')+'</button><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist'+(homeManage?' managing':'')+'"></div></div>');
     el.querySelector('.topbar').after(hinvTabs('home'));
     const grid=el.querySelector('.homeviewlist');
+    // 搜索框：输入关键词即时搜全部相关记录，清空恢复模块列表
+    const searchInp=el.querySelector('#home-search');
+    let searchSeq=0;
+    searchInp.addEventListener('input',async()=>{
+      const q=searchInp.value.trim();
+      const seq=++searchSeq;
+      if(!q){Router.refresh();return;}
+      const rows=await globalSearch(q);
+      if(seq!==searchSeq)return;
+      renderSearchResults(grid,rows,q);
+    });
     const homeItems=items.filter(it=>!(it.kind==='inventory'||(it.kind==='custom'&&it.specKind==='inventory')));
     if(!homeItems.length)grid.appendChild(h('<div class="empty" style="padding:20px">'+(homeManage?'点下方「＋ 新增事项」创建第一个事项':'点右上角「管理」开始使用')+'</div>'));
     for(const it of homeItems){
@@ -1035,7 +1142,9 @@ Pages.item={
     // 快速添加今日记录（饮食/缝纫，位于日历上方）
     if(ek0==='eat'||ek0==='sew'){
       const qa=el.querySelector('#qadd');
-      const qbox=h('<button class="skill-add" style="margin:6px 0 4px;padding:14px"><span class="plus">＋</span><span>'+(ek0==='eat'?'快速记录今日饮食':'快速记录今日缝纫')+'</span></button>');
+      const qbox=ek0==='eat'
+        ?h('<button class="skill-add" style="margin:6px 0 4px;padding:14px"><span style="font-size:30px;line-height:1">🍚</span><span>＋ 快速记录今日</span></button>')
+        :h('<button class="skill-add" style="margin:6px 0 4px;padding:14px"><span class="plus">＋</span><span>快速记录今日缝纫</span></button>');
       qbox.onclick=()=>{if(ek0==='eat')openQuickEat(item);else openQuickSew(item);};
       qa.appendChild(qbox);
     }
@@ -1347,7 +1456,7 @@ function openQuickSew(item){ // 快速记录今日缝纫：文本追加到当天
 function openQuickEat(item){ // 快速记录今日饮食：选餐次+菜名（逗号分隔多道），并确保当天生成打卡记录
   const date=todayKey();
   let slot='breakfast';
-  const sheet=h('<div class="sheet"><h3>快速记录今日饮食</h3>'
+  const sheet=h('<div class="sheet"><h3>快速记录今日</h3>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">餐次</label><div id="qa-slots" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">菜名（可用逗号分隔多道菜）</label><input class="input" id="qa-name" placeholder="如 红烧肉，炒青菜"></div>'
     +'<div class="row"><button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
@@ -1785,7 +1894,10 @@ async function exportAll(){
   const zip=makeZip(entries);
   const url=URL.createObjectURL(zip);
   const a=document.createElement('a');
-  a.href=url;a.download='journal-backup-'+todayKey()+'.zip';
+  // 备份文件名带具体时间（到秒），同一天的多份备份也能区分
+  const dn=new Date();
+  const ts=dn.getFullYear()+pad2(dn.getMonth()+1)+pad2(dn.getDate())+'-'+pad2(dn.getHours())+pad2(dn.getMinutes())+pad2(dn.getSeconds());
+  a.href=url;a.download='journal-backup-'+ts+'.zip';
   a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
@@ -1979,7 +2091,7 @@ Pages.invHub={
       li.addEventListener('pointercancel',cancelLp);
       list.appendChild(li);
     }
-    const add=h('<button class="skill-add" style="margin:14px 0 0"><span class="plus">＋</span><span>新增图鉴</span></button>');
+    const add=h('<button class="skill-add" style="padding:16px 14px"><span class="plus">＋</span><span>新增图鉴</span></button>'); // 样式参考「添加目标」框
     add.onclick=async()=>{
       const v=await promptBox('图鉴名称','',{placeholder:'如 手帐素材、香水'});
       if(!v)return;
@@ -1989,7 +2101,7 @@ Pages.invHub={
       toast('已新增「'+v+'」');
       Router.go('inventory',{itemId:nid});
     };
-    el.appendChild(add);
+    list.appendChild(add); // 放入带左右内边距的列表，与页面边缘保持距离
     bindSwipeRight(el,()=>Router.go('home')); // 右滑切换回打卡页（并列页面）
     return el;
   }
@@ -2478,7 +2590,13 @@ Pages.readShelf={
       const readN=allBooks.filter(b=>(b.status||'read')==='read').length;
       tabs.querySelector('[data-t=want]').textContent='想看 '+wantN;
       tabs.querySelector('[data-t=read]').textContent='已看 '+readN;
-      if(!books.length)shelf.appendChild(h('<div class="empty" style="grid-column:1/-1">'+(tab==='want'?'想看的书会显示在这里':'还没有书籍记录')+'</div>'));
+      if(!books.length){ // 自定义阅读模块按模块名生成空状态文案
+        const cn=item&&item.kind==='custom'?item.name:'';
+        const msg=tab==='want'
+          ?(cn?('想看的'+esc(cn)+'在这里'):'想看的书会显示在这里')
+          :(cn?('还没有'+esc(cn)+'记录'):'还没有书籍记录');
+        shelf.appendChild(h('<div class="empty" style="grid-column:1/-1">'+msg+'</div>'));
+      }
       for(const b of books){
         const coverUrl=b.coverId?Img.url(b.coverId):'';
         const card=h('<div class="bk" data-id="'+b.id+'">'+(coverUrl?'<img src="'+coverUrl+'">':'<div style="flex:1;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--ink2);font-size:28px">📖</div>')+'<div class="bn"></div></div>');
