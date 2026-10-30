@@ -201,7 +201,7 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .inv-grid{padding:10px 16px 120px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .inv-slot{display:flex;flex-direction:column;gap:3px;min-width:0}
 .inv-slot .sno{font-size:11px;font-weight:700;color:var(--bean)}
-.inv-cell{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--card);border:2px solid #000;padding:0;cursor:pointer}
+.inv-cell{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--card);border:1px solid #000;padding:0;cursor:pointer}
 .inv-cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .inv-cell .iempty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#D8CCBA;font-size:26px}
 /* ===== 周统计 ===== */
@@ -998,11 +998,20 @@ Pages.home={
       el.addEventListener('pointerleave',cancel);
       el.addEventListener('pointercancel',cancel);
     }
-    const el=h('<div><div class="topbar stack"><h1 class="hand" style="font-size:19px">“习惯可以暂停，不能终止”</h1><div class="tb-tools"><input type="search" id="home-search" class="input" placeholder="搜索全部记录…" style="flex:1;min-width:0;padding:8px 12px;border-radius:999px;font-size:13.5px"><button class="btn" data-x="manage">'+(homeManage?'完成':'管理')+'</button><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist'+(homeManage?' managing':'')+'"></div></div>');
+    const el=h('<div><div class="topbar stack"><h1 class="hand" style="font-size:19px">“习惯可以暂停，不能终止”</h1><div class="tb-tools"><button class="iconbtn" data-x="search" title="搜索"><svg viewBox="0 0 32 32" width="19" height="19" aria-hidden="true"><path fill="currentColor" d="M6.368 6.368a11.48 11.48 0 0 1 9.585-3.274L15 3.42a2.2 2.2 0 0 0-.92.59a10.46 10.46 0 0 0-7.005 3.065c-4.1 4.1-4.1 10.75 0 14.85s10.75 4.1 14.85 0a10.45 10.45 0 0 0 2.794-5.018q.112.116.241.213c.201.14.427.239.664.292a11.44 11.44 0 0 1-2.648 4.858l6.876 6.877a.5.5 0 0 1-.707.707l-6.876-6.877c-4.512 4.14-11.528 4.027-15.9-.345c-4.492-4.491-4.492-11.773 0-16.264M25.982 10a.36.36 0 0 1 .342.242l.298.918a1.9 1.9 0 0 0 1.2 1.197l.917.3l.019.003a.363.363 0 0 1 0 .684l-.918.299a1.9 1.9 0 0 0-1.2 1.197l-.298.918a.362.362 0 0 1-.684 0l-.299-.918a1.9 1.9 0 0 0-1.198-1.202l-.919-.298a.364.364 0 0 1-.175-.552a.36.36 0 0 1 .175-.132l.92-.299a1.9 1.9 0 0 0 1.179-1.197l.299-.918a.36.36 0 0 1 .34-.242M20.466 0a.665.665 0 0 1 .627.443l.547 1.683a3.47 3.47 0 0 0 2.198 2.196l1.684.547l.034.008a.666.666 0 0 1 0 1.254l-1.685.547a3.47 3.47 0 0 0-2.197 2.196l-.548 1.683l-.016.04a.666.666 0 0 1-1.238-.04l-.548-1.683a3.47 3.47 0 0 0-2.197-2.204l-1.684-.547A.67.67 0 0 1 15 5.496a.665.665 0 0 1 .444-.627l1.684-.547a3.47 3.47 0 0 0 2.15-2.154l.56-1.725a.665.665 0 0 1 .63-.443"/></svg></button><input type="search" id="home-search" class="input" placeholder="搜索全部记录…" style="flex:1;min-width:0;padding:8px 12px;border-radius:999px;font-size:13.5px;display:none"><button class="btn" data-x="manage">'+(homeManage?'完成':'管理')+'</button><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist'+(homeManage?' managing':'')+'"></div></div>');
     el.querySelector('.topbar').after(hinvTabs('home'));
     const grid=el.querySelector('.homeviewlist');
-    // 搜索框：输入关键词即时搜全部相关记录，清空恢复模块列表
+    // 搜索框：默认收起为图标，点击展开输入；输入关键词即时搜全部相关记录，清空恢复模块列表
     const searchInp=el.querySelector('#home-search');
+    const searchBtn=el.querySelector('[data-x=search]');
+    searchBtn.onclick=()=>{searchBtn.style.display='none';searchInp.style.display='';searchInp.focus();};
+    searchInp.addEventListener('blur',()=>{ // 未输入内容时失焦自动收起回图标
+      if(searchInp.value.trim())return;
+      searchInp.style.display='none';searchBtn.style.display='';
+    });
+    searchInp.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){searchInp.value='';searchInp.blur();Router.refresh();}
+    });
     let searchSeq=0;
     searchInp.addEventListener('input',async()=>{
       const q=searchInp.value.trim();
@@ -1120,7 +1129,7 @@ Pages.item={
     if(!item)return h('<div><div class="topbar"><h1 class="hand">事项不存在</h1></div><div class="empty">它可能已被删除</div></div>');
     const recs=await DB.byIndex('records','itemId',item.id);
     const marked=new Set(recs.map(r=>r.date));
-    const el=h('<div><div class="topbar stack"><h1 class="hand">'+esc(item.name)+'</h1><div class="tb-tools"><button class="iconbtn" data-act="back">←</button><span class="sp"></span><span class="spec-top"></span><button class="iconbtn" id="remind-btn" title="提醒">🔔</button></div></div><div class="goals"></div><div id="qadd"></div><div class="calbox"></div><div class="spec"></div></div>');
+    const el=h('<div><div class="topbar stack"><h1 class="hand">'+esc(item.name)+'</h1><div class="tb-tools"><button class="iconbtn" data-act="back">←</button><span class="sp"></span><span class="spec-top"></span><button class="iconbtn" id="remind-btn" title="提醒">🔔</button></div></div><div class="goals"></div><div id="qadd"></div><div id="spec-above"></div><div id="weekplan"></div><div class="calbox"></div><div class="spec"></div></div>');
     // 目标列表（技能模块不显示）：只显示已设目标，中间＋号添加；短期带倒计时
     const ek0=(item.kind==='custom'?(item.specKind||'none'):item.kind);
     const goals=el.querySelector('.goals');
@@ -1138,12 +1147,14 @@ Pages.item={
       el.querySelector('.calbox').remove();
     }
     // 专属功能区
-    await renderSpec(el.querySelector('.spec'),item,el.querySelector('.spec-top'),marked);
+    await renderSpec(el.querySelector('.spec'),item,el.querySelector('.spec-top'),marked,el.querySelector('#spec-above'));
+    // 本周安排（缝纫/饮食/运动，位于日历上方；其他模块移除占位）
+    renderWeekPlan(el.querySelector('#weekplan'),item);
     // 快速添加今日记录（饮食/缝纫，位于日历上方）
     if(ek0==='eat'||ek0==='sew'){
       const qa=el.querySelector('#qadd');
       const qbox=ek0==='eat'
-        ?h('<button class="skill-add" style="margin:6px 0 4px;padding:14px"><span style="font-size:30px;line-height:1">🍚</span><span>＋ 快速记录今日</span></button>')
+        ?h('<button class="skill-add" style="margin:6px 0 4px;padding:14px"><span class="plus">＋</span><span>快速记录今日</span></button>')
         :h('<button class="skill-add" style="margin:6px 0 4px;padding:14px"><span class="plus">＋</span><span>快速记录今日缝纫</span></button>');
       qbox.onclick=()=>{if(ek0==='eat')openQuickEat(item);else openQuickSew(item);};
       qa.appendChild(qbox);
@@ -1172,7 +1183,45 @@ Pages.item={
     return el;
   }
 };
-async function renderSpec(host,item,topSlot,marked){
+/* ===== 本周安排（缝纫/饮食/运动）：一列周一~周日，莫兰迪彩虹色方块，点击设置当天预设安排，位于日历上方 ===== */
+const WEEKPLAN_DAYS=['周一','周二','周三','周四','周五','周六','周日'];
+const WEEKPLAN_COLORS=['#A98467','#C97B7B','#D9A48F','#C2A27C','#8FA68A','#7A93AC','#B5838D'];
+function renderWeekPlan(host,item){
+  if(!host)return;
+  const ek=item.kind==='custom'?(item.specKind||'none'):item.kind;
+  if(['sew','eat','sport'].indexOf(ek)<0){host.remove();return;}
+  const wp=item.weekPlan||{};
+  host.innerHTML='';
+  const card=h('<div class="cal" id="wp-card"><div class="cal-head"><div class="cal-title hand">本周安排</div><span style="font-size:12px;color:var(--ink2)">点击某天设置预设安排</span></div><div id="wp-rows" style="display:flex;flex-direction:column;gap:6px;margin-top:8px"></div></div>');
+  const rows=card.querySelector('#wp-rows');
+  for(let i=0;i<7;i++){
+    const key=String(i+1);
+    const txt=wp[key]||'';
+    const row=h('<button type="button" class="wp-row" data-day="'+key+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--bg);border-radius:10px;padding:8px 10px"><span class="wp-sq" style="width:22px;height:22px;border-radius:6px;flex:none"></span><span style="font-size:13.5px;font-weight:600;flex:none;width:34px"></span><span class="wp-txt" style="flex:1;min-width:0;font-size:13px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span></button>');
+    row.querySelector('.wp-sq').style.background=WEEKPLAN_COLORS[i];
+    row.children[1].textContent=WEEKPLAN_DAYS[i];
+    const t=row.querySelector('.wp-txt');
+    if(txt){t.textContent=txt;t.style.color='var(--ink)';}else t.textContent='未设置';
+    row.onclick=async()=>{
+      const s=h('<div class="sheet"><h3>'+WEEKPLAN_DAYS[i]+'预设安排 · '+esc(item.name)+'</h3><textarea class="textarea" id="wp-inp" placeholder="如 19:00 有氧半小时"></textarea><div class="row"><button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
+      s.querySelector('#wp-inp').value=wp[key]||'';
+      const m=modal(s);
+      s.querySelector('[data-x=no]').onclick=()=>closeModal(m);
+      s.querySelector('[data-x=ok]').onclick=async()=>{
+        const v=s.querySelector('#wp-inp').value.trim();
+        item.weekPlan=item.weekPlan||{};
+        if(v)item.weekPlan[key]=v;else delete item.weekPlan[key];
+        await DB.put('items',item);
+        closeModal(m);
+        toast('已保存'+WEEKPLAN_DAYS[i]+'安排');
+        renderWeekPlan(host,item);
+      };
+    };
+    rows.appendChild(row);
+  }
+  host.appendChild(card);
+}
+async function renderSpec(host,item,topSlot,marked,aboveSlot){
   host.innerHTML='';
   if(topSlot)topSlot.innerHTML='';
   // custom kind 根据 specKind 决定专属模块渲染
@@ -1237,7 +1286,8 @@ async function renderSpec(host,item,topSlot,marked){
       };
       row.appendChild(rec);
     }
-    host.appendChild(row);
+    // 六个功能 chips 行移到日历上方
+    (aboveSlot||host).appendChild(row);
   }else if(ek==='sport'){
     topBtn('⚖','体重三围',()=>Router.go('bodyMetrics',{itemId:item.id}));
     sp.textContent=item.name+'记录';
@@ -2598,8 +2648,8 @@ Pages.readShelf={
         shelf.appendChild(h('<div class="empty" style="grid-column:1/-1">'+msg+'</div>'));
       }
       for(const b of books){
-        const coverUrl=b.coverId?Img.url(b.coverId):'';
-        const card=h('<div class="bk" data-id="'+b.id+'">'+(coverUrl?'<img src="'+coverUrl+'">':'<div style="flex:1;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--ink2);font-size:28px">📖</div>')+'<div class="bn"></div></div>');
+        const card=h('<div class="bk" data-id="'+b.id+'">'+(b.coverId?'<img alt="">':'<div style="flex:1;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--ink2);font-size:28px">📖</div>')+'<div class="bn"></div></div>');
+        if(b.coverId)Img.attach(card.querySelector('img'),b.coverId);
         card.querySelector('.bn').textContent=b.title;
         card.onclick=()=>Router.go('bookDetail',{id:b.id});
         // 长按显示 编辑/删除
@@ -2651,21 +2701,50 @@ Pages.readShelf={
   }
 };
 
+/* 解析粘贴的书籍信息（支持豆瓣等格式）：作者/译者/出版社/页数/简介 */
+function parseBookInfo(text){
+  const out={};
+  const re=/^[ \t]*(作者|译者|编者|出版社|出品方|出版年|页数|字数|ISBN)[ \t]*[:：][ \t]*(.*)$/gm;
+  let m;
+  while((m=re.exec(text))){
+    const k=m[1],v=(m[2]||'').trim();
+    if(!v)continue;
+    if(k==='作者'&&!out.author)out.author=v;
+    else if((k==='译者'||k==='编者')&&!out.translator)out.translator=v;
+    else if(k==='出版社'&&!out.publisher)out.publisher=v;
+    else if(k==='页数'&&!out.pages){const n=(v.match(/\d+/)||[])[0];if(n)out.pages=parseInt(n,10);}
+  }
+  // 简介：「简介」标题行之后、遇到分隔线或下一个栏目标题前的正文
+  const lines=text.split(/\r?\n/);
+  const idx=lines.findIndex(l=>/简\s*介/.test(l));
+  if(idx>=0){
+    const buf=[];
+    for(let i=idx+1;i<lines.length;i++){
+      const l=lines[i].trim();
+      if(!l){if(buf.length&&!buf[buf.length-1])buf.push('');continue;}
+      if(/^·( ?·)+/.test(l)||/^(作者|译者|编者|出版社|出品方|出版年|页数|字数|ISBN|目录|豆瓣)[ \t]*[:：]/.test(l))break;
+      buf.push(l);
+    }
+    const s=buf.join('\n').replace(/\n{2,}/g,'\n\n').trim();
+    if(s)out.intro=s;
+  }
+  return out;
+}
+
 /* ===== J12 书籍详情页 ===== */
 Pages.bookDetail={
   async render(p){
     const book=await DB.get('books',p.id);
     if(!book){Router.back();return h('<div></div>');}
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand" id="bd-title"></h1><button class="iconbtn" id="bd-del" title="删除">🗑</button></div><div style="padding:4px 16px 40px"><div id="bd-coverbox" style="margin:10px 0"></div><button class="btn" id="bd-status" style="margin:6px 0"></button><div class="stars" style="margin:8px 0" id="bd-stars"></div><div style="font-size:13px;color:var(--ink2);margin-bottom:6px">作者：<span id="bd-author"></span></div><div class="field"><label>读后感</label><textarea class="textarea" id="bd-review" rows="8" placeholder="写点什么…"></textarea></div></div></div>');
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand" id="bd-title"></h1><button class="iconbtn" id="bd-del" title="删除">🗑</button></div><div style="padding:4px 16px 40px"><div style="display:flex;gap:14px;align-items:flex-start"><div id="bd-coverbox" style="flex:none"></div><div style="flex:1;min-width:0"><button class="btn" id="bd-status" style="margin:6px 0"></button><div class="stars" style="margin:8px 0" id="bd-stars"></div></div></div><div id="bd-fields" style="margin:14px 0 4px"></div><div class="field"><label>简介</label><textarea class="textarea" id="bd-intro" rows="6" placeholder="书籍简介…"></textarea></div><div class="field"><label>读后感</label><textarea class="textarea" id="bd-review" rows="8" placeholder="写点什么…"></textarea></div><div class="field"><label>粘贴书籍信息自动识别（支持豆瓣等复制内容）</label><textarea class="textarea" id="bd-paste" rows="5" placeholder="把复制的书籍信息粘贴到这里，点下方按钮自动识别作者、译者、出版社、页数、简介"></textarea><button class="btn primary" id="bd-parse" style="margin-top:8px">识别并填充</button></div></div></div>');
     el.querySelector('#bd-title').textContent=book.title;
-    el.querySelector('#bd-author').textContent=book.author||'未填写';
     // 封面
     const coverbox=el.querySelector('#bd-coverbox');
     function drawCover(){
       coverbox.innerHTML='';
       if(book.coverId){
-        const img=h('<img style="max-width:150px;border-radius:8px;box-shadow:var(--shadow);cursor:pointer">');
-        img.src=Img.url(book.coverId);
+        const img=h('<img style="max-width:150px;border-radius:8px;box-shadow:var(--shadow);cursor:pointer" alt="">');
+        Img.attach(img,book.coverId);
         img.onclick=async()=>{const id=await Img.pickFiles({multiple:false});if(id){const blob=await Img.compress(id[0]);book.coverId=await Img.store(blob);await DB.put('books',book);drawCover();}};
         coverbox.appendChild(img);
       }else{
@@ -2696,6 +2775,59 @@ Pages.bookDetail={
       }
     }
     drawStars();
+    // 书籍信息字段：作者/译者/出版社/页数/完成日期（点击行编辑，行尾可清除）
+    const BD_FIELDS=[['author','作者'],['translator','译者'],['publisher','出版社'],['pages','页数'],['finishDate','完成日期']];
+    const fieldsBox=el.querySelector('#bd-fields');
+    function drawFields(){
+      fieldsBox.innerHTML='';
+      for(const f of BD_FIELDS){
+        const k=f[0],lab=f[1];
+        const row=h('<div class="bd-frow" data-k="'+k+'" style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);cursor:pointer"><span style="font-size:13px;color:var(--ink2);flex:none;width:60px">'+lab+'</span><span class="bd-fval" style="flex:1;min-width:0;font-size:14px;color:var(--ink2)"></span><span style="color:var(--ink2);font-size:12px;flex:none">✎</span></div>');
+        const val=row.querySelector('.bd-fval');
+        let v=book[k];
+        if(k==='pages'&&v)v=v+' 页';
+        if(v){val.textContent=v;val.style.color='var(--ink)';}else val.textContent='未填写';
+        row.onclick=()=>editBookField(k,lab);
+        fieldsBox.appendChild(row);
+      }
+    }
+    async function editBookField(k,lab){
+      const isDate=k==='finishDate';
+      const s=h('<div class="sheet"><h3>'+lab+'</h3><div style="margin:10px 0">'+(isDate?'<input type="date" class="input" id="bd-finp">':'<input class="input" id="bd-finp"'+(k==='pages'?' type="number" min="1" placeholder="如 356"':' placeholder="填写'+lab+'…')+'">')+'</div><div class="row"><button class="btn" data-x="no">清除</button><button class="btn" data-x="cancel">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
+      const inp=s.querySelector('#bd-finp');
+      inp.value=book[k]||'';
+      const m=modal(s);
+      s.querySelector('[data-x=cancel]').onclick=()=>closeModal(m);
+      s.querySelector('[data-x=no]').onclick=async()=>{delete book[k];await DB.put('books',book);closeModal(m);drawFields();};
+      s.querySelector('[data-x=ok]').onclick=async()=>{
+        const v=(inp.value||'').trim();
+        if(!v)delete book[k];
+        else book[k]=(k==='pages')?(parseInt(v,10)||v):v;
+        await DB.put('books',book);
+        closeModal(m);
+        drawFields();
+      };
+    }
+    drawFields();
+    // 简介 autosave
+    const introTa=el.querySelector('#bd-intro');
+    introTa.value=book.intro||'';
+    bindAutosave(introTa,async v=>{book.intro=v;await DB.put('books',book);});
+    // 粘贴识别：解析后自动填充 作者/译者/出版社/页数/简介
+    el.querySelector('#bd-parse').onclick=async()=>{
+      const txt=el.querySelector('#bd-paste').value.trim();
+      if(!txt){toast('请先粘贴书籍信息');return;}
+      const info=parseBookInfo(txt);
+      const names={author:'作者',translator:'译者',publisher:'出版社',pages:'页数',intro:'简介'};
+      const hits=Object.keys(names).filter(k=>info[k]);
+      if(!hits.length){toast('未识别到书籍信息，请检查内容');return;}
+      for(const k of hits)book[k]=info[k];
+      await DB.put('books',book);
+      drawFields();
+      if(info.intro)introTa.value=info.intro;
+      el.querySelector('#bd-paste').value='';
+      toast('已识别并填充：'+hits.map(k=>names[k]).join('、'));
+    };
     // 读后感 autosave
     const ta=el.querySelector('#bd-review');
     ta.value=book.review||'';
