@@ -116,6 +116,10 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .spec .cal{margin-left:0;margin-right:0}
 .spec-head{display:flex;align-items:center;gap:8px;margin:4px 0 10px;flex-wrap:wrap}
 .spec-head .sp{flex:1;font-size:15px}
+/* 模块待办滚动横幅 */
+.todo-banner{overflow:hidden;background:var(--card);border-radius:999px;box-shadow:var(--shadow);margin:2px 16px 12px;padding:8px 0;font-size:13.5px;color:var(--ink);cursor:pointer}
+.todo-banner .tb-track{display:inline-block;white-space:nowrap;animation:tbmove 16s linear infinite;padding-left:100%}
+@keyframes tbmove{from{transform:translateX(0)}to{transform:translateX(-100%)}}
 .daybody{padding:0 16px 30px}
 .imggrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
 .imgcell{position:relative;aspect-ratio:1;border-radius:var(--rs);overflow:hidden;background:var(--bg);box-shadow:var(--shadow)}
@@ -162,7 +166,7 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .fcnum{font-size:19px;font-weight:700;color:var(--bean)}
 .fcrow{display:flex;justify-content:space-between;font-size:13px;padding:7px 2px;border-bottom:1px solid var(--line);color:var(--ink)}
 .dishaddbtn{font-size:12.5px;color:var(--coffee);padding:3px 0}
-.tagchip{display:inline-flex;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12.5px;color:var(--ink2)}
+.tagchip{display:inline-flex;align-items:center;background:var(--bg);border:1.5px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12.5px;color:var(--ink2)}
 .tagchip.on{background:var(--bean);border-color:var(--bean);color:#fff}
 /* ===== 图鉴单独页 ===== */
 .invhubrow{background:var(--card);border-radius:var(--rs);box-shadow:var(--shadow);padding:14px 16px;display:flex;align-items:center;gap:10px;border-left:4px solid var(--c)}
@@ -191,6 +195,11 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .shelf .bk img{flex:1;width:100%;object-fit:cover;display:block}
 .shelf .bk .bn{padding:5px 6px;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .shelf .bk.add{border:2px dashed #D8CCBA;box-shadow:none;background:none;display:flex;align-items:center;justify-content:center;color:var(--ink2);font-size:28px;cursor:pointer}
+.shelf .bk{position:relative}
+.bk .bk-hide{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(74,63,53,.75);color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;z-index:2}
+.shelf .bk.manage{touch-action:none;cursor:grab}
+.shelf .bk.dragging{opacity:.9;transform:scale(1.04);box-shadow:var(--shadow2);z-index:5}
+.shelf .bk.dragging img,.shelf .bk.dragging .bn{pointer-events:none}
 .stars{display:flex;gap:6px;font-size:28px}
 .stars button{color:#D8CCBA}
 .stars button.on{color:var(--sand)}
@@ -972,6 +981,7 @@ Pages.home={
     const items=(await DB.all('items')).sort((a,b)=>a.order-b.order);
     const recs=await DB.all('records');
     const sets={};for(const r of recs){const s=sets[r.itemId];(s||(sets[r.itemId]=new Set())).add(r.date);}
+    const skMap={};for(const s of await DB.all('skills')){const a=skMap[s.itemId]||(skMap[s.itemId]=[]);a.push(s);}
     const today=todayKey();
     let suppressClick=false;
     function openItemMenu(it){
@@ -1028,7 +1038,14 @@ Pages.home={
     for(const it of homeItems){
       const set=sets[it.id]||new Set();
       const ok=set.has(today);
-      const li=h('<div class="hlistitem'+(homeManage?' manage':'')+'" data-id="'+it.id+'" style="--c:var(--'+it.color+')"><div class="licheck'+(ok?' ok':'')+'">'+(ok?'✓':'')+'</div><div class="libody"><div class="liname hand">'+esc(it.name)+'</div><div class="list'+(ok?' ok':'')+'">'+(ok?'已打卡，坚持'+computeStreak(set)+'天':'未打卡')+'</div></div>'+(homeManage&&!it.builtin?'<button class="btn" data-op="del" style="padding:6px 12px;font-size:13px;color:var(--danger);flex:none">删除</button>':'')+'</div>');
+      const ek0=it.kind==='custom'?(it.specKind||'none'):it.kind;
+      let sub=(ok?'已打卡，坚持'+computeStreak(set)+'天':'未打卡');
+      if(ek0==='skill'){ // 技能模块：只显示最新一条记录内容（不带日期）
+        const arr=(skMap[it.id]||[]).slice().sort((a,b)=>((b.time||'').localeCompare(a.time||''))||((b.createdAt||0)-(a.createdAt||0)));
+        const s=arr[0];
+        sub=s?esc(s.title||s.text||'暂无记录'):'暂无记录';
+      }
+      const li=h('<div class="hlistitem'+(homeManage?' manage':'')+'" data-id="'+it.id+'" style="--c:var(--'+it.color+')"><div class="licheck'+(ok?' ok':'')+'">'+(ok?'✓':'')+'</div><div class="libody"><div class="liname hand">'+esc(it.name)+'</div><div class="list'+(ek0==='skill'?'':(ok?' ok':''))+'">'+sub+'</div></div>'+(homeManage&&!it.builtin?'<button class="btn" data-op="del" style="padding:6px 12px;font-size:13px;color:var(--danger);flex:none">删除</button>':'')+'</div>');
       li.onclick=async e=>{
         const op=e.target.closest('[data-op=del]');
         if(op){
@@ -1131,13 +1148,65 @@ Pages.item={
     if(!item)return h('<div><div class="topbar"><h1 class="hand">事项不存在</h1></div><div class="empty">它可能已被删除</div></div>');
     const recs=await DB.byIndex('records','itemId',item.id);
     const marked=new Set(recs.map(r=>r.date));
-    const el=h('<div><div class="topbar stack"><h1 class="hand">'+esc(item.name)+'</h1><div class="tb-tools"><button class="iconbtn" data-act="back">←</button><span class="sp"></span><span class="spec-top"></span><button class="iconbtn" id="remind-btn" title="提醒">🔔</button></div></div><div class="goals"></div><div id="qadd"></div><div id="spec-above"></div><div id="weekplan"></div><div class="calbox"></div><div class="spec"></div></div>');
+    const el=h('<div><div class="topbar stack"><h1 class="hand">'+esc(item.name)+'</h1><div class="tb-tools"><button class="iconbtn" data-act="back">←</button><span class="sp"></span><span class="spec-top"></span><button class="iconbtn" id="remind-btn" title="提醒">🔔</button></div></div><div class="goals"></div><div id="todo-banner" class="todo-banner" style="display:none"></div><div id="qadd"></div><div id="spec-above"></div><div id="weekplan"></div><div class="calbox"></div><div class="spec"></div></div>');
     // 目标列表（技能模块不显示）：只显示已设目标，中间＋号添加；短期带倒计时
     const ek0=(item.kind==='custom'?(item.specKind||'none'):item.kind);
     const goals=el.querySelector('.goals');
     if(ek0==='skill')goals.remove();else renderGoalList(goals,item);
     if(ek0==='eat'){ // 饮食页：🔔提醒移除（价格表等功能在下方功能 chips 行）
       el.querySelector('#remind-btn').remove();
+    }
+    // 模块待办（饮食/缝纫/运动）：左上角入口 + 标题下滚动横幅提醒
+    if(['eat','sew','sport'].indexOf(ek0)>=0){
+      const tbtn=h('<button class="iconbtn" id="todo-btn" title="待办">📋</button>');
+      el.querySelector('[data-act=back]').after(tbtn);
+      const banner=el.querySelector('#todo-banner');
+      function renderBanner(){
+        const pend=(item.todos||[]).filter(t=>!t.done);
+        banner.innerHTML='';
+        if(!pend.length){banner.style.display='none';return;}
+        banner.style.display='';
+        const txt=pend.map(t=>'◦ '+t.text).join('　');
+        banner.appendChild(h('<div class="tb-track">📋 待办　'+esc(txt)+'</div>'));
+      }
+      function openTodos(){
+        const s=h('<div class="sheet"><h3>待办 · '+esc(item.name)+'</h3><div id="td-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px"></div><div><input class="input" id="td-inp" placeholder="新待办，如 今晚整理布料"></div><div class="row"><button class="btn" data-x="cancel">关闭</button><button class="btn primary" data-x="ok">添加</button></div></div>');
+        function drawList(){
+          const box=s.querySelector('#td-list');box.innerHTML='';
+          if(!(item.todos||[]).length){box.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">暂无待办</div>'));return;}
+          [...item.todos].sort((a,b)=>(a.done-b.done)||((a.createdAt||0)-(b.createdAt||0))).forEach(t=>{
+            const row=h('<div style="display:flex;align-items:center;gap:10px;padding:5px 2px"></div>');
+            const ck=h('<button style="width:22px;height:22px;border-radius:6px;border:2px solid var(--line);flex:none;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff"></button>');
+            if(t.done){ck.style.background='var(--ok)';ck.style.borderColor='var(--ok)';ck.textContent='✓';}
+            const tx=h('<span style="flex:1;min-width:0;font-size:14.5px"></span>');
+            tx.textContent=t.text;
+            if(t.done){tx.style.textDecoration='line-through';tx.style.color='var(--ink2)';}
+            const del=h('<button style="color:var(--ink2);font-size:14px;flex:none">✕</button>');
+            ck.onclick=async()=>{t.done=!t.done;await DB.put('items',item);drawList();renderBanner();};
+            del.onclick=async()=>{item.todos=item.todos.filter(x=>x.id!==t.id);await DB.put('items',item);drawList();renderBanner();};
+            row.appendChild(ck);row.appendChild(tx);row.appendChild(del);
+            box.appendChild(row);
+          });
+        }
+        function addTodo(){
+          const v=(s.querySelector('#td-inp').value||'').trim();
+          if(!v)return;
+          item.todos=item.todos||[];
+          item.todos.push({id:uid(),text:v,done:false,createdAt:Date.now()});
+          s.querySelector('#td-inp').value='';
+          DB.put('items',item).then(()=>{drawList();renderBanner();});
+        }
+        drawList();
+        const m=modal(s);
+        s.querySelector('[data-x=ok]').onclick=addTodo;
+        s.querySelector('#td-inp').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addTodo();}};
+        s.querySelector('[data-x=cancel]').onclick=()=>closeModal(m);
+      }
+      tbtn.onclick=()=>openTodos();
+      banner.onclick=()=>openTodos();
+      renderBanner();
+    }else{
+      el.querySelector('#todo-banner').remove();
     }
     // 月历（运动和技能模块不显示日历；custom 按 specKind 决定）
     const showCal = (item.kind==='custom'?(item.specKind!=='sport'&&item.specKind!=='skill'):(item.kind!=='sport'&&item.kind!=='skill'));
@@ -2633,24 +2702,141 @@ Pages.readShelf={
     const itemId=item?item.id:null;
     const shelfTitle=item&&item.kind==='custom'?('我的'+item.name):'我的书架';
     let tab='read';
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(shelfTitle)+'</h1></div><div style="padding:0 16px 8px"><div class="seg" id="shelf-tabs"><button data-t="read" class="on">已看</button><button data-t="want">想看</button></div></div><div class="shelf" id="shelf"></div></div>');
+    let shelfTag='全部';
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(shelfTitle)+'</h1><button class="iconbtn plain" id="shelf-mng">管理</button></div><div style="padding:0 16px 8px"><div class="seg" id="shelf-tabs"><button data-t="read" class="on">已看</button><button data-t="want">想看</button></div></div><div id="shelf-tags" style="padding:0 16px 10px;display:none;gap:8px;flex-wrap:wrap"></div><div class="cal" id="read-timer" style="margin:0 16px 12px"><div class="cal-head"><div class="cal-title">今日阅读</div><div id="rt-total" style="font-size:13px;color:var(--ink2)"></div></div><div id="rt-list"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="rt-start">开始计时</button><button class="btn" id="rt-add">补录时长</button></div></div><div class="shelf" id="shelf"></div></div>');
     const shelf=el.querySelector('#shelf');
     const tabs=el.querySelector('#shelf-tabs');
+    let shelfManage=false,suppressClick=false;
+    // 管理模式：长按拖拽排序 + 隐藏/恢复
+    el.querySelector('#shelf-mng').onclick=()=>{shelfManage=!shelfManage;redraw();};
+    let sdrag=null;
+    shelf.addEventListener('pointerdown',e=>{
+      if(!shelfManage)return;
+      const card=e.target.closest('.bk');
+      if(!card||card.classList.contains('add')||e.target.closest('[data-op=hide]'))return;
+      sdrag={card,sx:e.clientX,sy:e.clientY,moved:false};
+      try{card.setPointerCapture(e.pointerId);}catch(err){}
+    });
+    shelf.addEventListener('pointermove',e=>{
+      if(!sdrag)return;
+      if(!sdrag.moved){
+        if(Math.hypot(e.clientX-sdrag.sx,e.clientY-sdrag.sy)<6)return;
+        sdrag.moved=true;sdrag.card.classList.add('dragging');
+      }
+      const over=document.elementFromPoint(e.clientX,e.clientY);
+      const t=over&&over.closest?over.closest('.bk'):null;
+      if(t&&t!==sdrag.card&&shelf.contains(t)&&!t.classList.contains('add')&&!t.classList.contains('bk-hidden-sec')){
+        const r=t.getBoundingClientRect();
+        shelf.insertBefore(sdrag.card,e.clientY<r.top+r.height/2?t:t.nextSibling);
+      }
+    });
+    const endShelfDrag=()=>{
+      if(!sdrag)return;
+      const d=sdrag;sdrag=null;
+      d.card.classList.remove('dragging');
+      if(!d.moved)return;
+      suppressClick=true;setTimeout(()=>suppressClick=false,80);
+      persistShelfOrder();
+    };
+    shelf.addEventListener('pointerup',endShelfDrag);
+    shelf.addEventListener('pointercancel',endShelfDrag);
+    async function persistShelfOrder(){
+      const ids=[...shelf.querySelectorAll('.bk')].filter(c=>!c.classList.contains('add')&&c.dataset.id).map(c=>c.dataset.id);
+      for(let i=0;i<ids.length;i++){
+        const b=await DB.get('books',ids[i]);
+        if(b&&b.order!==i){b.order=i;await DB.put('books',b);}
+      }
+    }
     tabs.addEventListener('click',e=>{
       const b=e.target.closest('button[data-t]');if(!b)return;
       tab=b.dataset.t;
       tabs.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
       redraw();
     });
+    /* ===== 今日阅读计时打卡 ===== */
+    const rtCard=el.querySelector('#read-timer');
+    let rtStart=null,rtTick=null;
+    function rtFmt(sec){return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');}
+    async function saveRead(mins,src){
+      await DB.put('records',{id:uid(),itemId:itemId||null,date:todayKey(),text:'阅读 '+mins+' 分钟'+(src==='补录'?'（补录）':''),imageIds:[],minutes:mins,updatedAt:Date.now(),createdAt:Date.now()});
+      toast('已记录 '+mins+' 分钟');
+      rtRedraw();
+    }
+    async function rtRedraw(){
+      const tk=todayKey();
+      const rs=(await DB.all('records')).filter(r=>r.itemId===itemId&&r.date===tk&&r.minutes).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+      rtCard.querySelector('#rt-total').textContent='今日已读 '+rs.reduce((s,r)=>s+(r.minutes||0),0)+' 分钟';
+      const list=rtCard.querySelector('#rt-list');
+      list.innerHTML='';
+      if(!rs.length){list.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">今天还没有阅读记录</div>'));return;}
+      rs.forEach(r=>{
+        const row=h('<div style="display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:2px 0"></div>');
+        const t1=h('<span></span>');t1.textContent=r.text||('阅读 '+(r.minutes||0)+' 分钟');
+        const t2=h('<span style="color:var(--ink2);flex:none"></span>');t2.textContent=r.createdAt?new Date(r.createdAt).toTimeString().slice(0,5):'';
+        row.appendChild(t1);row.appendChild(t2);
+        list.appendChild(row);
+      });
+    }
+    rtCard.querySelector('#rt-start').onclick=()=>{
+      const btn=rtCard.querySelector('#rt-start');
+      if(rtStart){
+        const sec=Math.round((Date.now()-rtStart)/1000);
+        clearInterval(rtTick);rtStart=null;rtTick=null;
+        btn.textContent='开始计时';btn.classList.add('primary');
+        saveRead(Math.max(1,Math.round(sec/60)),'计时');
+      }else{
+        rtStart=Date.now();
+        btn.classList.remove('primary');
+        btn.textContent='结束 '+rtFmt(0);
+        rtTick=setInterval(()=>{
+          if(!document.contains(btn)){clearInterval(rtTick);rtStart=null;rtTick=null;return;}
+          btn.textContent='结束 '+rtFmt(Math.floor((Date.now()-rtStart)/1000));
+        },1000);
+      }
+    };
+    rtCard.querySelector('#rt-add').onclick=async()=>{
+      const v=await promptBox('补录时长（分钟）','',{placeholder:'如 30'});
+      const n=parseInt(v,10);
+      if(!n||n<=0)return;
+      saveRead(Math.min(n,1440),'补录');
+    };
+    rtRedraw();
     async function redraw(){
       shelf.innerHTML='';
+      if(shelfManage)shelf.appendChild(h('<div style="grid-column:1/-1;font-size:12.5px;color:var(--ink2);padding:2px 2px 0">长按拖动卡片调整顺序，点 ✕ 隐藏</div>'));
       let allBooks=await DB.all('books');
       if(itemId)allBooks=allBooks.filter(b=>b.itemId===itemId);
-      const books=allBooks.filter(b=>(b.status||'read')===tab).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-      const wantN=allBooks.filter(b=>(b.status||'read')==='want').length;
-      const readN=allBooks.filter(b=>(b.status||'read')==='read').length;
+      // 排序：order 优先（管理态长按拖拽写入），未设置的按创建时间倒序；隐藏书不在书架显示
+      const tabBooks=allBooks.filter(b=>(b.status||'read')===tab&&!b.hidden).sort((a,b)=>((a.order??1e12)-(b.order??1e12))||((b.createdAt||0)-(a.createdAt||0)));
+      // 旧数据迁移：首次补 order，保持现有先后
+      if(tabBooks.some(b=>b.order==null)){
+        tabBooks.forEach((b,i)=>{b.order=i;});
+        for(const b of tabBooks)await DB.put('books',b);
+      }
+      let books=tabBooks;
+      if(shelfTag!=='全部')books=tabBooks.filter(b=>(b.tags||[]).includes(shelfTag));
+      // 标签筛选条（模块内未隐藏书的标签聚合）
+      const tagPool=[...new Set(allBooks.filter(b=>!b.hidden).flatMap(b=>b.tags||[]))].sort();
+      const tagBar=el.querySelector('#shelf-tags');
+      tagBar.innerHTML='';
+      if(tagPool.length){
+        tagBar.style.display='flex';
+        const cnt=t=>tabBooks.filter(b=>(b.tags||[]).includes(t)).length;
+        const mk=t=>{
+          const c=h('<button class="btn" style="padding:5px 12px;font-size:13px"></button>');
+          c.textContent=t==='全部'?('全部 '+tabBooks.length):(t+' '+cnt(t));
+          if(shelfTag===t){c.style.background='var(--coffee)';c.style.color='#fff';}
+          c.onclick=()=>{shelfTag=t;redraw();};
+          return c;
+        };
+        tagBar.appendChild(mk('全部'));
+        tagPool.forEach(t=>tagBar.appendChild(mk(t)));
+      }else tagBar.style.display='none';
+      const wantN=allBooks.filter(b=>(b.status||'read')==='want'&&!b.hidden).length;
+      const readN=allBooks.filter(b=>(b.status||'read')==='read'&&!b.hidden).length;
       tabs.querySelector('[data-t=want]').textContent='想看 '+wantN;
       tabs.querySelector('[data-t=read]').textContent='已看 '+readN;
+      el.querySelector('#shelf-mng').textContent=shelfManage?'完成':'管理';
       if(!books.length){ // 自定义阅读模块按模块名生成空状态文案
         const cn=item&&item.kind==='custom'?item.name:'';
         const msg=tab==='want'
@@ -2659,16 +2845,19 @@ Pages.readShelf={
         shelf.appendChild(h('<div class="empty" style="grid-column:1/-1">'+msg+'</div>'));
       }
       for(const b of books){
-        const card=h('<div class="bk" data-id="'+b.id+'">'+(b.coverId?'<img alt="">':'<div style="flex:1;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--ink2);font-size:28px">📖</div>')+'<div class="bn"></div></div>');
+        const card=h('<div class="bk'+(shelfManage?' manage':'')+'" data-id="'+b.id+'">'+(shelfManage?'<button class="bk-hide" data-op="hide">✕</button>':'')+(b.coverId?'<img alt="">':'<div style="flex:1;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--ink2);font-size:28px">📖</div>')+'<div class="bn"></div></div>');
         if(b.coverId)Img.attach(card.querySelector('img'),b.coverId);
         card.querySelector('.bn').textContent=b.title;
-        card.onclick=()=>Router.go('bookDetail',{id:b.id});
-        // 长按显示 编辑/删除
+        const hideBtn=card.querySelector('[data-op=hide]');
+        if(hideBtn)hideBtn.onclick=async e=>{e.stopPropagation();b.hidden=true;await DB.put('books',b);toast('已隐藏，可在管理页底部恢复');redraw();};
+        card.onclick=()=>{if(suppressClick||shelfManage)return;Router.go('bookDetail',{id:b.id});};
+        // 长按显示 编辑/删除（管理模式下长按用于拖拽，不弹菜单）
         let lp=null;
         card.addEventListener('pointerdown',e=>{
+          if(shelfManage)return;
           lp=setTimeout(()=>{
             lp=null;
-            const s=h('<div class="sheet"><h3>'+esc(b.title)+'</h3><div style="display:flex;flex-direction:column;gap:10px"><button class="btn" id="bkr-edit">✏ 编辑书名</button><button class="btn danger" id="bkr-del">🗑 删除书籍</button><button class="btn" id="bkr-move">'+(tab==='read'?'📚 移到「想看」':'✅ 移到「已看」')+'</button><button class="btn" id="bkr-no">取消</button></div></div>');
+            const s=h('<div class="sheet"><h3>'+esc(b.title)+'</h3><div style="display:flex;flex-direction:column;gap:10px"><button class="btn" id="bkr-edit">✏ 编辑书名</button><button class="btn danger" id="bkr-del">🗑 删除书籍</button><button class="btn" id="bkr-move">'+(tab==='read'?'📚 移到「想看」':'✅ 移到「已看」')+'</button><button class="btn" id="bkr-hide">🙈 隐藏</button><button class="btn" id="bkr-no">取消</button></div></div>');
             const m=modal(s);
             s.querySelector('#bkr-no').onclick=()=>closeModal(m);
             s.querySelector('#bkr-edit').onclick=async()=>{
@@ -2680,9 +2869,13 @@ Pages.readShelf={
               b.status=tab==='read'?'want':'read';
               await DB.put('books',b);closeModal(m);toast('已移动');redraw();
             };
+            s.querySelector('#bkr-hide').onclick=async()=>{
+              b.hidden=true;await DB.put('books',b);
+              closeModal(m);toast('已隐藏，进入管理可恢复');redraw();
+            };
             s.querySelector('#bkr-del').onclick=async()=>{
               closeModal(m);
-              const y=await confirmBox('删除「'+b.title+'」？封面与读后感将一并删除。',{danger:true,okText:'删除'});
+              const y=await confirmBox('删除「'+b.title+'」？封面与所思将一并删除。',{danger:true,okText:'删除'});
               if(y){
                 if(b.coverId)await DB.del('images',b.coverId);
                 await DB.del('books',b.id);toast('已删除');redraw();
@@ -2695,6 +2888,25 @@ Pages.readShelf={
         card.addEventListener('pointerleave',cancelLp);
         card.addEventListener('pointercancel',cancelLp);
         shelf.appendChild(card);
+      }
+      // 管理模式底部：已隐藏区（点击恢复）
+      if(shelfManage){
+        const hidAll=allBooks.filter(b=>b.hidden);
+        const sec=h('<div class="bk-hidden-sec" style="grid-column:1/-1;margin-top:8px"></div>');
+        sec.appendChild(h('<div style="font-size:13px;color:var(--ink2);margin:4px 0 8px">已隐藏'+(hidAll.length?(' '+hidAll.length+' 本'):'')+'（点击书名恢复）</div>'));
+        if(hidAll.length){
+          const row=h('<div style="display:flex;flex-wrap:wrap;gap:8px"></div>');
+          for(const hb of hidAll){
+            const chip=h('<button class="btn" style="padding:6px 12px;font-size:13px"></button>');
+            chip.textContent=hb.title||'无题';
+            chip.onclick=async()=>{hb.hidden=false;await DB.put('books',hb);toast('已恢复');redraw();};
+            row.appendChild(chip);
+          }
+          sec.appendChild(row);
+        }else{
+          sec.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">暂无隐藏的书籍</div>'));
+        }
+        shelf.appendChild(sec);
       }
       // 添加按钮（添加到当前文件夹）
       const add=h('<div class="bk add" style="aspect-ratio:3/4">＋</div>');
@@ -2748,7 +2960,7 @@ Pages.bookDetail={
   async render(p){
     const book=await DB.get('books',p.id);
     if(!book){Router.back();return h('<div></div>');}
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand" id="bd-title"></h1><button class="iconbtn" id="bd-del" title="删除">🗑</button></div><div style="padding:4px 16px 40px"><div style="display:flex;gap:14px;align-items:flex-start"><div id="bd-coverbox" style="flex:none"></div><div style="flex:1;min-width:0"><button class="btn" id="bd-status" style="margin:6px 0"></button><div class="stars" style="margin:8px 0" id="bd-stars"></div></div></div><div id="bd-fields" style="margin:14px 0 4px"></div><div class="field"><label>简介</label><textarea class="textarea" id="bd-intro" rows="6" placeholder="书籍简介…"></textarea></div><div class="field"><label>读后感</label><textarea class="textarea" id="bd-review" rows="8" placeholder="写点什么…"></textarea></div><div class="field"><label>粘贴书籍信息自动识别（支持豆瓣等复制内容）</label><textarea class="textarea" id="bd-paste" rows="5" placeholder="把复制的书籍信息粘贴到这里，点下方按钮自动识别作者、译者、出版社、页数、简介"></textarea><button class="btn primary" id="bd-parse" style="margin-top:8px">识别并填充</button></div></div></div>');
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand" id="bd-title"></h1><button class="iconbtn" id="bd-del" title="删除">🗑</button></div><div style="padding:4px 16px 40px"><div style="display:flex;gap:14px;align-items:flex-start"><div id="bd-coverbox" style="flex:none"></div><div style="flex:1;min-width:0"><button class="btn" id="bd-status" style="margin:6px 0"></button><div class="stars" style="margin:8px 0" id="bd-stars"></div></div></div><div id="bd-fields" style="margin:14px 0 4px"></div><div id="bd-tags" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:2px 2px 12px;border-bottom:1px solid var(--line)"></div><div class="field"><label>简介</label><textarea class="textarea" id="bd-intro" rows="6" placeholder="书籍简介…"></textarea></div><div class="field"><label>所思</label><textarea class="textarea" id="bd-review" rows="8" placeholder="写点什么…"></textarea></div><div class="field"><label>粘贴书籍信息自动识别（支持豆瓣等复制内容）</label><textarea class="textarea" id="bd-paste" rows="5" placeholder="把复制的书籍信息粘贴到这里，点下方按钮自动识别作者、译者、出版社、页数、简介"></textarea><button class="btn primary" id="bd-parse" style="margin-top:8px">识别并填充</button></div></div></div>');
     el.querySelector('#bd-title').textContent=book.title;
     // 封面
     const coverbox=el.querySelector('#bd-coverbox');
@@ -2787,22 +2999,52 @@ Pages.bookDetail={
       }
     }
     drawStars();
-    // 书籍信息字段：作者/译者/出版社/页数/完成日期（点击行编辑，行尾可清除）
+    // 书籍信息字段：默认显示 作者/完成日期（译者/出版社/页数/定价默认隐藏，可自行添加回或隐藏）
     const BD_FIELDS=[['author','作者'],['translator','译者'],['publisher','出版社'],['pages','页数'],['price','定价'],['finishDate','完成日期']];
+    const DEFAULT_BD_HIDDEN=['translator','publisher','pages','price'];
+    function bdHiddenSet(){return new Set(Array.isArray(book.bdHidden)?book.bdHidden:DEFAULT_BD_HIDDEN);}
     const fieldsBox=el.querySelector('#bd-fields');
     function drawFields(){
       fieldsBox.innerHTML='';
+      const hid=bdHiddenSet();
       for(const f of BD_FIELDS){
         const k=f[0],lab=f[1];
-        const row=h('<div class="bd-frow" data-k="'+k+'" style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);cursor:pointer"><span style="font-size:13px;color:var(--ink2);flex:none;width:60px">'+lab+'</span><span class="bd-fval" style="flex:1;min-width:0;font-size:14px;color:var(--ink2)"></span><span style="color:var(--ink2);font-size:12px;flex:none">✎</span></div>');
+        if(hid.has(k))continue;
+        const row=h('<div class="bd-frow" data-k="'+k+'" style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);cursor:pointer"><span style="font-size:13px;color:var(--ink2);flex:none;width:60px">'+lab+'</span><span class="bd-fval" style="flex:1;min-width:0;font-size:14px;color:var(--ink2)"></span><span data-op="hide" title="隐藏" style="color:var(--ink2);font-size:13px;flex:none;padding:0 4px">－</span><span style="color:var(--ink2);font-size:12px;flex:none">✎</span></div>');
         const val=row.querySelector('.bd-fval');
         let v=book[k];
         if(k==='pages'&&v)v=v+' 页';
         if(k==='price'&&v!==''&&v!=null)v=v+' 元';
         if(v){val.textContent=v;val.style.color='var(--ink)';}else val.textContent='未填写';
+        row.querySelector('[data-op=hide]').onclick=e=>{e.stopPropagation();hideField(k,lab);};
         row.onclick=()=>editBookField(k,lab);
         fieldsBox.appendChild(row);
       }
+      // 添加信息行：列出被隐藏的字段，点击加回
+      const addable=BD_FIELDS.filter(f=>hid.has(f[0]));
+      if(addable.length){
+        const add=h('<div id="bd-addfield" style="display:flex;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--coffee);font-size:13.5px"></div>');
+        add.textContent='＋ 添加信息（'+addable.map(f=>f[1]).join('、')+'）';
+        add.onclick=()=>showAddFieldMenu(addable);
+        fieldsBox.appendChild(add);
+      }
+    }
+    async function hideField(k,lab){
+      const s=bdHiddenSet();s.add(k);
+      book.bdHidden=[...s];await DB.put('books',book);
+      toast('已隐藏「'+lab+'」，点「＋ 添加信息」可加回');
+      drawFields();
+    }
+    function showAddFieldMenu(addable){
+      const s=h('<div class="sheet"><h3>添加信息</h3><div style="display:flex;flex-direction:column;gap:10px"></div></div>');
+      const box=s.querySelector('div');
+      for(const f of addable){
+        const b=h('<button class="btn"></button>');b.textContent=f[1];
+        b.onclick=async()=>{const st=bdHiddenSet();st.delete(f[0]);book.bdHidden=[...st];await DB.put('books',book);closeModal(m);drawFields();toast('已显示「'+f[1]+'」');};
+        box.appendChild(b);
+      }
+      const c=h('<button class="btn">取消</button>');c.onclick=()=>closeModal(m);box.appendChild(c);
+      const m=modal(s);
     }
     async function editBookField(k,lab){
       const isDate=k==='finishDate';
@@ -2824,6 +3066,62 @@ Pages.bookDetail={
       };
     }
     drawFields();
+    // 标签（自由标签，书架可按标签筛选）
+    const tagsBox=el.querySelector('#bd-tags');
+    function drawTags(){
+      tagsBox.innerHTML='';
+      const tags=book.tags||[];
+      tags.forEach(t=>{
+        const c=h('<button class="btn" style="padding:5px 12px;font-size:13px"></button>');
+        c.textContent='🏷 '+t;
+        c.onclick=()=>openTagEditor();
+        tagsBox.appendChild(c);
+      });
+      const add=h('<button class="btn" style="padding:6px 12px;font-size:13px;color:var(--ink2);box-shadow:none;background:var(--bg)"></button>');
+      add.textContent=tags.length?'＋':'🏷 添加标签';
+      add.onclick=()=>openTagEditor();
+      tagsBox.appendChild(add);
+    }
+    async function openTagEditor(){
+      const all=(await DB.all('books')).filter(b=>b.itemId===book.itemId).flatMap(b=>b.tags||[]);
+      const poolArr=[...new Set(all)].sort();
+      const cur=new Set(book.tags||[]);
+      const s=h('<div class="sheet"><h3>标签</h3><div id="tg-pool" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div><div style="margin-bottom:4px"><input class="input" id="tg-inp" placeholder="新标签，如 小说"></div><div class="row"><button class="btn" data-x="cancel">取消</button><button class="btn primary" data-x="ok">完成</button></div></div>');
+      const pool=s.querySelector('#tg-pool');
+      function drawPool(){
+        pool.innerHTML='';
+        if(!poolArr.length){pool.appendChild(h('<span style="font-size:12.5px;color:var(--ink2)">暂无历史标签，可输入新标签</span>'));return;}
+        poolArr.forEach(t=>{
+          const on=cur.has(t);
+          const c=h('<button class="btn" style="padding:5px 12px;font-size:13px"></button>');
+          c.textContent=t+(on?' ✓':'');
+          if(on){c.style.background='var(--coffee)';c.style.color='#fff';}
+          c.onclick=()=>{if(on)cur.delete(t);else cur.add(t);drawPool();};
+          pool.appendChild(c);
+        });
+      }
+      function addNew(){
+        const v=(s.querySelector('#tg-inp').value||'').trim();
+        if(!v)return;
+        if(!poolArr.includes(v))poolArr.push(v);
+        cur.add(v);
+        s.querySelector('#tg-inp').value='';
+        drawPool();
+      }
+      s.querySelector('#tg-inp').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addNew();}};
+      drawPool();
+      const m=modal(s);
+      s.querySelector('[data-x=cancel]').onclick=()=>closeModal(m);
+      s.querySelector('[data-x=ok]').onclick=async()=>{
+        addNew();
+        book.tags=[...cur];
+        await DB.put('books',book);
+        closeModal(m);
+        drawTags();
+        toast('标签已保存');
+      };
+    }
+    drawTags();
     // 简介 autosave
     const introTa=el.querySelector('#bd-intro');
     introTa.value=book.intro||'';
