@@ -2883,7 +2883,15 @@ Pages.fridge={
     const body=el.querySelector('#fd-body');
     async function drawZoneBox(zone,label,ic){
       let list=(await DB.byIndex('fridge','itemId',itemId)).filter(r=>(r.zone||'cold')===zone);
-      list=list.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+      // 排序：待消耗/已过期按到期日升序（最快到期在前），已用完/已损坏沉底
+      list=list.sort((a,b)=>{
+        const sa=fridgeEffStatus(a),sb=fridgeEffStatus(b);
+        const da=(sa==='已用完'||sa==='已损坏')?1:0;
+        const db=(sb==='已用完'||sb==='已损坏')?1:0;
+        if(da!==db)return da-db;
+        const ea=a.expireDate||'9999-12-31',eb=b.expireDate||'9999-12-31';
+        return ea.localeCompare(eb)||(a.name||'').localeCompare(b.name||'');
+      });
       const box=h('<div class="cal" style="margin:0 0 14px"><div class="cal-head"><div class="cal-title">'+ic+' '+label+'</div><button class="btn" style="padding:5px 12px;font-size:12.5px">添加</button></div><div class="fd-tags" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px"></div></div>');
       box.querySelector('.btn').onclick=()=>openFridgeForm(itemId,zone,null,{},draw);
       const tags=box.querySelector('.fd-tags');
@@ -2971,7 +2979,7 @@ Pages.readShelf={
     const shelfTitle=item&&item.kind==='custom'?('我的'+item.name):'我的书架';
     let tab='reading';
     let shelfTag='全部';
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(shelfTitle)+'</h1><button class="iconbtn plain" id="shelf-mng">管理</button></div><div style="padding:0 16px 8px"><div class="seg" id="shelf-tabs"><button data-t="reading" class="on">在读</button><button data-t="read">已看</button><button data-t="want">想看</button></div></div><div id="shelf-tags" style="padding:0 16px 10px;display:none;gap:8px;flex-wrap:wrap"></div>'+(item&&item.kind==='custom'?'':'<div class="cal" id="read-timer" style="margin:0 16px 12px"><div class="cal-head"><div class="cal-title">今日阅读</div><div id="rt-total" style="font-size:13px;color:var(--ink2)"></div></div><div id="rt-list"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="rt-start">开始计时</button><button class="btn" id="rt-add">补录时长</button></div></div>')+'<div class="shelf" id="shelf"></div></div>');
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(shelfTitle)+'</h1><button class="iconbtn plain" id="shelf-mng">管理</button></div><div style="padding:0 16px 8px"><div class="seg" id="shelf-tabs"><button data-t="reading" class="on">在读</button><button data-t="read">已看</button><button data-t="want">想看</button></div></div><div id="shelf-tags" style="padding:0 16px 10px;display:none;gap:8px;flex-wrap:wrap"></div>'+(item&&item.kind==='custom'?'':'<div class="cal" id="excerpt-card" style="margin:0 16px 12px"><div class="cal-head"><div class="cal-title hand">摘抄</div><div id="ex-date" style="font-size:13px;color:var(--ink2)"></div></div><div id="ex-body" style="font-size:14px;line-height:1.8"></div></div>')+'<div class="shelf" id="shelf"></div></div>');
     const shelf=el.querySelector('#shelf');
     const tabs=el.querySelector('#shelf-tabs');
     let shelfManage=false,suppressClick=false;
@@ -3021,61 +3029,34 @@ Pages.readShelf={
       tabs.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
       redraw();
     });
-    /* ===== 今日阅读计时打卡（仅固定书架） ===== */
-    const rtCard=el.querySelector('#read-timer');
-    if(rtCard){
-    let rtStart=null,rtTick=null;
-    function rtFmt(sec){return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');}
-    async function saveRead(mins,src){
-      await DB.put('records',{id:uid(),itemId:itemId||null,date:todayKey(),text:'阅读 '+mins+' 分钟'+(src==='补录'?'（补录）':''),imageIds:[],minutes:mins,updatedAt:Date.now(),createdAt:Date.now()});
-      toast('已记录 '+mins+' 分钟');
-      rtRedraw();
-    }
-    async function rtRedraw(){
+    /* ===== 摘抄卡片（仅固定书架）：全部书籍阅读记录的摘抄，按日期为种子每天随机显示一条 ===== */
+    const exCard=el.querySelector('#excerpt-card');
+    if(exCard){
+    (async function drawExcerpt(){
       const tk=todayKey();
-      const rs=(await DB.all('records')).filter(r=>r.itemId===itemId&&r.date===tk&&r.minutes).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
-      rtCard.querySelector('#rt-total').textContent='今日已读 '+rs.reduce((s,r)=>s+(r.minutes||0),0)+' 分钟';
-      const list=rtCard.querySelector('#rt-list');
-      list.innerHTML='';
-      if(!rs.length){list.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">今天还没有阅读记录</div>'));return;}
-      rs.forEach(r=>{
-        const row=h('<div style="display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:2px 0"></div>');
-        const t1=h('<span></span>');t1.textContent=r.text||('阅读 '+(r.minutes||0)+' 分钟');
-        const t2=h('<span style="color:var(--ink2);flex:none"></span>');t2.textContent=r.createdAt?new Date(r.createdAt).toTimeString().slice(0,5):'';
-        row.appendChild(t1);row.appendChild(t2);
-        list.appendChild(row);
-      });
-    }
-    rtCard.querySelector('#rt-start').onclick=()=>{
-      const btn=rtCard.querySelector('#rt-start');
-      if(rtStart){
-        const sec=Math.round((Date.now()-rtStart)/1000);
-        clearInterval(rtTick);rtStart=null;rtTick=null;
-        btn.textContent='开始计时';btn.classList.add('primary');
-        saveRead(Math.max(1,Math.round(sec/60)),'计时');
-      }else{
-        rtStart=Date.now();
-        btn.classList.remove('primary');
-        btn.textContent='结束 '+rtFmt(0);
-        rtTick=setInterval(()=>{
-          if(!document.contains(btn)){clearInterval(rtTick);rtStart=null;rtTick=null;return;}
-          btn.textContent='结束 '+rtFmt(Math.floor((Date.now()-rtStart)/1000));
-        },1000);
+      let seed=0;for(const ch of tk)seed=(seed*31+ch.charCodeAt(0))>>>0;
+      const all=(await DB.all('records')).filter(r=>r.excerpt);
+      exCard.querySelector('#ex-date').textContent=tk.replace(/-/g,'/');
+      const body=exCard.querySelector('#ex-body');
+      body.innerHTML='';
+      if(!all.length){
+        body.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">暂无摘抄 · 打开在读书籍，在「今日阅读」里可以记录摘抄</div>'));
+        return;
       }
-    };
-    rtCard.querySelector('#rt-add').onclick=async()=>{
-      const v=await promptBox('补录时长（分钟）','',{placeholder:'如 30'});
-      const n=parseInt(v,10);
-      if(!n||n<=0)return;
-      saveRead(Math.min(n,1440),'补录');
-    };
-    rtRedraw();
+      const pick=all[seed%all.length];
+      let bname='';
+      if(pick.bookId){const b=await DB.get('books',pick.bookId);if(b)bname=b.title;}
+      const q=h('<div><div class="ex-text" style="color:var(--ink)"></div><div style="margin-top:6px;font-size:12.5px;color:var(--ink2);text-align:right"></div></div>');
+      q.querySelector('.ex-text').textContent='「'+pick.excerpt+'」';
+      q.querySelector('div:last-child').textContent=(bname?'——《'+bname+'》':'')+(pick.date?(' · '+pick.date):'');
+      body.appendChild(q);
+    })();
     }
     async function redraw(){
       shelf.innerHTML='';
       if(shelfManage)shelf.appendChild(h('<div style="grid-column:1/-1;font-size:12.5px;color:var(--ink2);padding:2px 2px 0">长按拖动卡片调整顺序，点 ✕ 隐藏</div>'));
-      // 今日阅读计时卡片仅在「在读」tab 显示（自定义模块无此卡片）
-      if(rtCard)rtCard.style.display=tab==='reading'?'':'none';
+      // 摘抄卡片仅在「在读」tab 显示（自定义模块无此卡片）
+      if(exCard)exCard.style.display=tab==='reading'?'':'none';
       let allBooks=await DB.all('books');
       if(itemId)allBooks=allBooks.filter(b=>b.itemId===itemId);
       // 排序：order 优先（管理态长按拖拽写入），未设置的按创建时间倒序；隐藏书不在书架显示
@@ -3124,6 +3105,12 @@ Pages.readShelf={
         const card=h('<div class="bk'+(shelfManage?' manage':'')+'" data-id="'+b.id+'">'+(shelfManage?'<button class="bk-hide" data-op="hide">✕</button>':'')+(b.coverId?'<img alt="">':'<div style="flex:1;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--ink2);font-size:28px">📖</div>')+'<div class="bn"></div></div>');
         if(b.coverId)Img.attach(card.querySelector('img'),b.coverId);
         card.querySelector('.bn').textContent=b.title;
+        // 借阅书角标：封面右上角显示剩余天数/已逾期
+        if(b.borrowDue&&dueLabel(b.borrowDue)){
+          const bdg=h('<span style="position:absolute;top:5px;right:5px;z-index:2;background:var(--danger);color:#fff;font-size:10.5px;line-height:1;padding:4px 8px;border-radius:999px;box-shadow:var(--shadow)"></span>');
+          bdg.textContent=dueLabel(b.borrowDue);
+          card.appendChild(bdg);
+        }
         const hideBtn=card.querySelector('[data-op=hide]');
         if(hideBtn)hideBtn.onclick=async e=>{e.stopPropagation();b.hidden=true;await DB.put('books',b);toast('已隐藏，可在管理页底部恢复');redraw();};
         card.onclick=()=>{if(suppressClick||shelfManage)return;Router.go('bookDetail',{id:b.id});};
@@ -3231,12 +3218,24 @@ function parseBookInfo(text){
   return out;
 }
 
+function dueDaysLeft(due){ // 借阅到期日 'YYYY-MM-DD' → 剩余天数（0=今天到期，负数=已逾期）
+  if(!due)return null;
+  const d=new Date(due+'T00:00:00');
+  const t=new Date(todayKey()+'T00:00:00');
+  return Math.round((d-t)/86400000);
+}
+function dueLabel(due){ // 到期日 → 角标文案
+  const n=dueDaysLeft(due);
+  if(n===null)return '';
+  return n>0?('剩余'+n+'天'):n===0?'今天到期':'已逾期'+(-n)+'天';
+}
+
 /* ===== J12 图书详情页 ===== */
 Pages.bookDetail={
   async render(p){
     const book=await DB.get('books',p.id);
     if(!book){Router.back();return h('<div></div>');}
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand" id="bd-title"></h1><button class="iconbtn" id="bd-del" title="删除">🗑</button></div><div style="padding:4px 16px 40px"><div style="display:flex;gap:14px;align-items:flex-start"><div id="bd-coverbox" style="flex:none"></div><div style="flex:1;min-width:0"><button class="btn" id="bd-status" style="margin:6px 0"></button><div class="stars" style="margin:8px 0" id="bd-stars"></div></div></div><div class="cal" id="bd-rt" style="margin:14px 0 4px"><div class="cal-head"><div class="cal-title">今日阅读</div><div id="bd-rt-total" style="font-size:13px;color:var(--ink2)"></div></div><div id="bd-rt-list"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="bd-rt-start">开始计时</button><button class="btn" id="bd-rt-add">补录时长</button></div><div style="display:flex;gap:8px;align-items:center;margin-top:10px"><input class="input" id="bd-page" type="number" min="0" placeholder="读到第几页" style="flex:1"><button class="btn" id="bd-page-save">保存页数</button><span class="saved" id="bd-page-saved">已保存</span></div></div><div id="bd-fields" style="margin:14px 0 4px"></div><div id="bd-tags" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:2px 2px 12px;border-bottom:1px solid var(--line)"></div><div class="field"><label>简介</label><textarea class="textarea" id="bd-intro" rows="6" placeholder="图书简介…"></textarea></div><div class="field"><label>所思</label><textarea class="textarea" id="bd-review" rows="8" placeholder="写点什么…"></textarea></div><div class="field"><label>粘贴图书信息自动识别（支持豆瓣等复制内容）</label><textarea class="textarea" id="bd-paste" rows="5" placeholder="把复制的图书信息粘贴到这里，点下方按钮自动识别作者、译者、出版社、页数、简介"></textarea><button class="btn primary" id="bd-parse" style="margin-top:8px">识别并填充</button></div></div></div>');
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand" id="bd-title"></h1><button class="iconbtn" id="bd-del" title="删除">🗑</button></div><div style="padding:4px 16px 40px"><div style="display:flex;gap:14px;align-items:flex-start"><div id="bd-coverbox" style="flex:none"></div><div style="flex:1;min-width:0"><button class="btn" id="bd-status" style="margin:6px 0"></button><div class="stars" style="margin:8px 0" id="bd-stars"></div></div></div><div class="cal" id="bd-borrow" style="margin:14px 0 4px;padding:10px 14px;display:flex;align-items:center;gap:10px"><span style="flex:none;font-size:18px">📚</span><div style="flex:1;min-width:0"><div style="font-size:12.5px;color:var(--ink2)">借阅到期（借的书可设置还书日期）</div><div id="bd-borrow-val" style="font-size:14px;color:var(--ink2)">未借阅</div></div><button class="btn" id="bd-borrow-set" style="padding:6px 12px;font-size:12.5px;flex:none">设置</button></div><div class="cal" id="bd-rt" style="margin:14px 0 4px"><div class="cal-head"><div class="cal-title">今日阅读</div><div id="bd-rt-total" style="font-size:13px;color:var(--ink2)"></div></div><div id="bd-rt-info" style="font-size:12.5px;color:var(--ink2);margin:2px 0 8px"></div><div id="bd-rt-list"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="bd-rt-start">开始计时</button><button class="btn" id="bd-rt-add">补录时长</button></div><div style="display:flex;gap:8px;align-items:center;margin-top:10px"><input class="input" id="bd-page" type="number" min="0" placeholder="读到第几页" style="flex:1"><button class="btn" id="bd-page-save">保存页数</button><span class="saved" id="bd-page-saved">已保存</span></div><div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><label style="font-size:12.5px;color:var(--ink2);display:block;margin-bottom:5px">今日摘抄</label><textarea class="textarea" id="bd-excerpt" rows="3" placeholder="写下今天读到的句子…" style="min-height:64px"></textarea><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button class="btn primary" id="bd-excerpt-save">保存摘抄</button><span class="saved" id="bd-ex-saved">已保存</span></div></div><div id="bd-history" style="margin-top:12px;border-top:1px solid var(--line);padding-top:8px"></div></div><div id="bd-fields" style="margin:14px 0 4px"></div><div id="bd-tags" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:2px 2px 12px;border-bottom:1px solid var(--line)"></div><div class="field"><label>简介</label><textarea class="textarea" id="bd-intro" rows="6" placeholder="图书简介…"></textarea></div><div class="field"><label>所思</label><textarea class="textarea" id="bd-review" rows="8" placeholder="写点什么…"></textarea></div><div class="field"><label>粘贴图书信息自动识别（支持豆瓣等复制内容）</label><textarea class="textarea" id="bd-paste" rows="5" placeholder="把复制的图书信息粘贴到这里，点下方按钮自动识别作者、译者、出版社、页数、简介"></textarea><button class="btn primary" id="bd-parse" style="margin-top:8px">识别并填充</button></div></div></div>');
     el.querySelector('#bd-title').textContent=book.title;
     // 封面
     const coverbox=el.querySelector('#bd-coverbox');
@@ -3276,6 +3275,36 @@ Pages.bookDetail={
       }
     }
     drawStars();
+    /* ===== 借阅到期（借的书设置还书日期，书架封面显示剩余天数角标） ===== */
+    const borrowBox=el.querySelector('#bd-borrow');
+    function drawBorrow(){
+      const val=borrowBox.querySelector('#bd-borrow-val');
+      if(book.borrowDue){
+        const n=dueDaysLeft(book.borrowDue);
+        val.textContent=book.borrowDue+' · '+dueLabel(book.borrowDue);
+        val.style.color=n!==null&&n<0?'var(--danger)':'var(--ink)';
+        borrowBox.querySelector('#bd-borrow-set').textContent='修改';
+      }else{
+        val.textContent='未借阅';
+        val.style.color='var(--ink2)';
+        borrowBox.querySelector('#bd-borrow-set').textContent='设置';
+      }
+    }
+    borrowBox.querySelector('#bd-borrow-set').onclick=()=>{
+      const s=h('<div class="sheet"><h3>借阅到期日</h3><div style="margin:10px 0"><input type="date" class="input" id="bd-borrow-inp"></div><div style="font-size:12px;color:var(--ink2);margin-bottom:4px">设置后书架封面会显示「剩余xx天」角标；清除后取消借阅状态</div><div class="row"><button class="btn" data-x="no">清除</button><button class="btn" data-x="cancel">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
+      const inp=s.querySelector('#bd-borrow-inp');
+      inp.value=book.borrowDue||'';
+      const m=modal(s);
+      s.querySelector('[data-x=cancel]').onclick=()=>closeModal(m);
+      s.querySelector('[data-x=no]').onclick=async()=>{delete book.borrowDue;await DB.put('books',book);closeModal(m);drawBorrow();toast('已清除借阅到期');};
+      s.querySelector('[data-x=ok]').onclick=async()=>{
+        const v=inp.value;
+        if(!v){toast('请选择日期');return;}
+        book.borrowDue=v;await DB.put('books',book);
+        closeModal(m);drawBorrow();toast('已设置借阅到期 '+v);
+      };
+    };
+    drawBorrow();
     /* ===== 今日阅读计时 + 读到第几页（在读图书） ===== */
     const bdRtCard=el.querySelector('#bd-rt');
     let bdRtStart=null,bdRtTick=null;
@@ -3292,16 +3321,43 @@ Pages.bookDetail={
       const tk=todayKey();
       const rs=(await DB.all('records')).filter(r=>r.bookId===book.id&&r.date===tk&&r.minutes).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
       bdRtCard.querySelector('#bd-rt-total').textContent='今日已读 '+rs.reduce((s,r)=>s+(r.minutes||0),0)+' 分钟';
+      // 今日阅读的书籍信息行：书名 · 状态 · 当前进度
+      const stTxt=(book.status||'read')==='reading'?'在读':(book.status||'read')==='want'?'想看':'已看';
+      bdRtCard.querySelector('#bd-rt-info').textContent='《'+(book.title||'无题')+'》 · '+stTxt+(book.currentPage?(' · 读到第 '+book.currentPage+' 页'):'');
       const list=bdRtCard.querySelector('#bd-rt-list');
       list.innerHTML='';
-      if(!rs.length){list.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">今天还没有这本书的阅读记录</div>'));return;}
-      rs.forEach(r=>{
+      if(!rs.length){list.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">今天还没有这本书的阅读记录</div>'));}
+      else rs.forEach(r=>{
         const row=h('<div style="display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:2px 0"></div>');
         const t1=h('<span></span>');t1.textContent=r.text||('阅读 '+(r.minutes||0)+' 分钟');
         const t2=h('<span style="color:var(--ink2);flex:none"></span>');t2.textContent=r.createdAt?new Date(r.createdAt).toTimeString().slice(0,5):'';
         row.appendChild(t1);row.appendChild(t2);
         list.appendChild(row);
       });
+      drawHistory();
+    }
+    async function drawHistory(){ // 阅读记录：该书籍历史上每天汇总（日期+当日总时长+读到页数），最近在最上
+      const box=bdRtCard.querySelector('#bd-history');
+      const rs=(await DB.all('records')).filter(r=>r.bookId===book.id&&r.minutes);
+      const byDay={};
+      for(const r of rs){
+        const d=byDay[r.date]=byDay[r.date]||{m:0,page:null};
+        d.m+=r.minutes||0;
+        if(r.page&&(!d.page||r.page>d.page))d.page=r.page;
+      }
+      const days=Object.keys(byDay).sort((a,b)=>b.localeCompare(a));
+      box.innerHTML='';
+      box.appendChild(h('<div style="font-size:13px;color:var(--ink2);margin-bottom:4px">阅读记录 · 共 '+days.length+' 天</div>'));
+      if(!days.length){box.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">还没有阅读记录</div>'));return;}
+      for(const d of days.slice(0,60)){
+        const row=h('<div style="display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:2px 0"></div>');
+        const t1=h('<span style="flex:none"></span>');t1.textContent=d;
+        const t2=h('<span style="color:var(--ink2);text-align:right;min-width:0"></span>');
+        t2.textContent=byDay[d].m+' 分钟'+(byDay[d].page?(' · 读到第 '+byDay[d].page+' 页'):'');
+        row.appendChild(t1);row.appendChild(t2);
+        box.appendChild(row);
+      }
+      if(days.length>60)box.appendChild(h('<div style="font-size:12px;color:var(--ink2)">仅显示最近 60 天</div>'));
     }
     bdRtCard.querySelector('#bd-rt-start').onclick=()=>{
       const btn=bdRtCard.querySelector('#bd-rt-start');
@@ -3325,6 +3381,15 @@ Pages.bookDetail={
       const n=parseInt(v,10);
       if(!n||n<=0)return;
       bdSaveRead(Math.min(n,1440),'补录');
+    };
+    // 今日摘抄：与阅读记录同库存储（excerpt 字段），书架「摘抄」卡片每日随机展示
+    bdRtCard.querySelector('#bd-excerpt-save').onclick=async()=>{
+      const v=bdRtCard.querySelector('#bd-excerpt').value.trim();
+      if(!v){toast('请先输入摘抄内容');return;}
+      await DB.put('records',{id:uid(),itemId:book.itemId||null,bookId:book.id,date:todayKey(),text:'摘抄',excerpt:v,imageIds:[],minutes:null,createdAt:Date.now(),updatedAt:Date.now()});
+      bdRtCard.querySelector('#bd-excerpt').value='';
+      const sv=bdRtCard.querySelector('#bd-ex-saved');sv.classList.add('show');setTimeout(()=>sv.classList.remove('show'),1500);
+      toast('已保存摘抄');
     };
     // 读到第几页（累计进度，随记录保存）
     const pageInp=el.querySelector('#bd-page');
@@ -3507,8 +3572,8 @@ Pages.bookDetail={
 
 /* ===== J15 播种与启动 ===== */
 const SEED=[
-  {name:'缝纫',kind:'sew',color:'coffee'},
   {name:'饮食',kind:'eat',color:'bean'},
+  {name:'缝纫',kind:'sew',color:'coffee'},
   {name:'运动',kind:'sport',color:'mist'},
   {name:'阅读',kind:'read',color:'sand'},
   {name:'技能',kind:'skill',color:'sage'},
@@ -3554,6 +3619,16 @@ async function purgeDishTodo(){ // 彻底下线「待做饮食」：清理历史
     if(e.bucket==='dish-todo'||(e.bucket||'').endsWith('-dish-todo'))await DB.del('entries',e.id);
   }
 }
+async function moveEatFirst(){ // 一次性：打卡页「饮食」调整到第一条（此后仍可在管理模式自由拖动）
+  if(await DB.getSetting('eatFirstDone',0))return;
+  const items=await DB.all('items');
+  const eat=items.find(it=>it.builtin&&it.kind==='eat');
+  if(eat){
+    const min=items.reduce((m,i)=>Math.min(m,i.order),0);
+    if(eat.order!==min){eat.order=min-1;await DB.put('items',eat);}
+  }
+  await DB.setSetting('eatFirstDone',1);
+}
 (async function boot(){
   try{await DB.open();}
   catch(e){
@@ -3564,6 +3639,7 @@ async function purgeDishTodo(){ // 彻底下线「待做饮食」：清理历史
   await ensureBuiltin();
   await migrateOwnership();
   await purgeDishTodo();
+  await moveEatFirst();
   Router.start();
 })();
 
