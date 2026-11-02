@@ -158,13 +158,11 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .dishchip .dn{font-size:13.5px;color:var(--ink)}
 .dishchip .dtag{font-size:11px;color:var(--ink2)}
 .dishchip .dprice{font-size:11px;color:var(--bean)}
-/* ===== 饮食开销页 ===== */
 .fmonth{text-align:center;font-size:13.5px;color:var(--ink2);margin:10px 0 8px}
 .fchead{display:flex;gap:10px;margin-bottom:12px}
 .fccard{flex:1;background:var(--card);border-radius:var(--rs);box-shadow:var(--shadow);padding:12px 10px;text-align:center}
 .fclabel{font-size:12px;color:var(--ink2);margin-bottom:4px}
 .fcnum{font-size:19px;font-weight:700;color:var(--bean)}
-.fcrow{display:flex;justify-content:space-between;font-size:13px;padding:7px 2px;border-bottom:1px solid var(--line);color:var(--ink)}
 .dishaddbtn{font-size:12.5px;color:var(--coffee);padding:3px 0}
 .tagchip{display:inline-flex;align-items:center;background:var(--bg);border:1.5px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12.5px;color:var(--ink2)}
 .tagchip.on{background:var(--bean);border-color:var(--bean);color:#fff}
@@ -859,7 +857,7 @@ async function deleteItemCascade(item){
     for(const bk of await DB.all('books')){
       if(bk.itemId===item.id){imgIds.push(bk.coverId,bk.coverImageId);imgIds.push(...await collectImageIds(bk));await DB.del('books',bk.id);}
     }
-    for(const b of ['sew-inspiration','sew-tips','dish-gallery','dish-todo','eat-tips']){
+    for(const b of ['sew-inspiration','sew-tips','dish-gallery','eat-tips']){
       const es=await DB.byIndex('entries','bucket','c_'+item.id+'-'+b);
       for(const en of es){imgIds.push(...await collectImageIds(en));await DB.del('entries',en.id);}
     }
@@ -870,7 +868,7 @@ async function deleteItemCascade(item){
     }
   }else if(ek==='eat'){
     for(const m of await DB.all('meals'))await DB.del('meals',m.id);
-    for(const b of ['dish-gallery','dish-todo']){
+    for(const b of ['dish-gallery']){
       const es=await DB.byIndex('entries','bucket',b);
       for(const en of es){imgIds.push(...await collectImageIds(en));await DB.del('entries',en.id);}
     }
@@ -899,7 +897,6 @@ function bucketDisplayName(bucket,byId){ // 由 bucket 推导文件夹显示名
   if(b==='sew-inspiration'||b.endsWith('-sew-inspiration'))return '灵感收集';
   if(b==='sew-tips'||b.endsWith('-sew-tips')||b==='eat-tips'||b.endsWith('-eat-tips'))return '小 Tip';
   if(b==='dish-gallery'||b.endsWith('-dish-gallery'))return nm?(nm+'图鉴'):'图鉴';
-  if(b==='dish-todo'||b.endsWith('-dish-todo'))return nm?('待做'+nm):'待做清单';
   return '条目';
 }
 async function globalSearch(q){
@@ -938,10 +935,10 @@ async function globalSearch(q){
       push({t:'条目',label:nm,date:e.createdAt?new Date(e.createdAt).toISOString().slice(0,10):'',text:e.title||(e.text||''),go:()=>Router.go('folder',{bucket:e.bucket,name:nm})});
     }
   }
-  // 书籍
+  // 图书
   for(const b of await DB.all('books')){
     if(((b.title||'')+' '+(b.author||'')+' '+(b.review||'')).toLowerCase().indexOf(q)>=0)
-      push({t:'书籍',label:itemName(b.itemId),date:'',text:b.title+(b.author?' · '+b.author:''),go:()=>Router.go('bookDetail',{id:b.id})});
+      push({t:'阅读',label:itemName(b.itemId),date:'',text:b.title+(b.author?' · '+b.author:''),go:()=>Router.go('bookDetail',{id:b.id})});
   }
   // 技能
   for(const s of await DB.all('skills')){
@@ -1148,12 +1145,12 @@ Pages.item={
     if(!item)return h('<div><div class="topbar"><h1 class="hand">事项不存在</h1></div><div class="empty">它可能已被删除</div></div>');
     const recs=await DB.byIndex('records','itemId',item.id);
     const marked=new Set(recs.map(r=>r.date));
-    const el=h('<div><div class="topbar stack"><h1 class="hand">'+esc(item.name)+'</h1><div class="tb-tools"><button class="iconbtn" data-act="back">←</button><span class="sp"></span><span class="spec-top"></span><button class="iconbtn" id="remind-btn" title="提醒">🔔</button></div></div><div class="goals"></div><div id="todo-banner" class="todo-banner" style="display:none"></div><div id="qadd"></div><div id="spec-above"></div><div id="weekplan"></div><div class="calbox"></div><div class="spec"></div></div>');
+    const el=h('<div><div class="topbar stack"><h1 class="hand">'+esc(item.name)+'</h1><div class="tb-tools"><button class="iconbtn" data-act="back">←</button><span class="sp"></span><span class="spec-top"></span><button class="iconbtn" id="remind-btn" title="提醒">🔔</button></div></div><div id="todo-banner" class="todo-banner" style="display:none"></div><div class="goals"></div><div id="qadd"></div><div id="spec-above"></div><div id="weekplan"></div><div class="calbox"></div><div class="spec"></div></div>');
     // 目标列表（技能模块不显示）：只显示已设目标，中间＋号添加；短期带倒计时
     const ek0=(item.kind==='custom'?(item.specKind||'none'):item.kind);
     const goals=el.querySelector('.goals');
     if(ek0==='skill')goals.remove();else renderGoalList(goals,item);
-    if(ek0==='eat'){ // 饮食页：🔔提醒移除（价格表等功能在下方功能 chips 行）
+    if(ek0==='eat'){ // 饮食页：🔔提醒移除（采购记录等功能在下方功能 chips 行）
       el.querySelector('#remind-btn').remove();
     }
     // 模块待办（饮食/缝纫/运动）：左上角入口 + 标题下滚动横幅提醒
@@ -1166,8 +1163,8 @@ Pages.item={
         banner.innerHTML='';
         if(!pend.length){banner.style.display='none';return;}
         banner.style.display='';
-        const txt=pend.map(t=>'◦ '+t.text).join('　');
-        banner.appendChild(h('<div class="tb-track">📋 待办　'+esc(txt)+'</div>'));
+        const txt=pend.map(t=>'！！！'+t.text).join('　');
+        banner.appendChild(h('<div class="tb-track">'+esc(txt)+'</div>'));
       }
       function openTodos(){
         const s=h('<div class="sheet"><h3>待办 · '+esc(item.name)+'</h3><div id="td-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px"></div><div><input class="input" id="td-inp" placeholder="新待办，如 今晚整理布料"></div><div class="row"><button class="btn" data-x="cancel">关闭</button><button class="btn primary" data-x="ok">添加</button></div></div>');
@@ -1181,10 +1178,10 @@ Pages.item={
             const tx=h('<span style="flex:1;min-width:0;font-size:14.5px"></span>');
             tx.textContent=t.text;
             if(t.done){tx.style.textDecoration='line-through';tx.style.color='var(--ink2)';}
-            const del=h('<button style="color:var(--ink2);font-size:14px;flex:none">✕</button>');
-            ck.onclick=async()=>{t.done=!t.done;await DB.put('items',item);drawList();renderBanner();};
-            del.onclick=async()=>{item.todos=item.todos.filter(x=>x.id!==t.id);await DB.put('items',item);drawList();renderBanner();};
-            row.appendChild(ck);row.appendChild(tx);row.appendChild(del);
+            const tm=h('<span style="flex:none;font-size:12px;color:var(--ink2)"></span>');
+            if(t.done&&t.completedAt){const d=new Date(t.completedAt);tm.textContent=(d.getMonth()+1)+'-'+d.getDate()+' '+d.toTimeString().slice(0,5);}
+            ck.onclick=async()=>{t.done=!t.done;if(t.done)t.completedAt=Date.now();else delete t.completedAt;await DB.put('items',item);drawList();renderBanner();};
+            row.appendChild(ck);row.appendChild(tx);row.appendChild(tm);
             box.appendChild(row);
           });
         }
@@ -1261,40 +1258,60 @@ function renderWeekPlan(host,item){
   if(!host)return;
   const ek=item.kind==='custom'?(item.specKind||'none'):item.kind;
   if(['sew','eat','sport'].indexOf(ek)<0){host.remove();return;}
-  const wp=item.weekPlan||{};
+  // 按周分开保存：{ [周一日期]: {'1'..'7': 文本} }；周一自动进入新的一周，空白开始
+  const curWeek=weekStart(todayKey());
+  const nextWeek=addDays(curWeek,7);
+  // 旧格式迁移：直接 {'1'..'7'} 的数据迁入当前周（仅当当前周无数据）
+  if(item.weekPlan&&!Object.keys(item.weekPlan).some(k=>/^\d{4}-/.test(k))){
+    const old=item.weekPlan;
+    if(!old[curWeek])item.weekPlan={[curWeek]:Object.assign({},old)};
+    for(const k of Object.keys(old))if(/^[1-7]$/.test(k))delete item.weekPlan[k];
+    DB.put('items',item);
+  }
+  if(!item.weekPlan)item.weekPlan={};
+  const wp=item.weekPlan;
+  const cur=wp[curWeek]||{};
+  const todayN=(new Date().getDay()+6)%7+1; // 今天星期数（1=周一）
   host.innerHTML='';
-  const card=h('<div class="cal" id="wp-card"><div class="cal-head"><div class="cal-title hand">本周安排</div><button class="btn" id="wp-quick" style="padding:5px 12px;font-size:12.5px">快速安排</button></div><div id="wp-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:10px"></div><div style="font-size:11.5px;color:var(--ink2);margin-top:8px">点击方格设置当天预设安排；「快速安排」随机填入一天</div></div>');
+  const card=h('<div class="cal" id="wp-card"><div class="cal-head"><div class="cal-title hand">本周安排</div><button class="btn" id="wp-quick" style="padding:5px 12px;font-size:12.5px">快速安排</button></div><div id="wp-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:10px"></div><div style="font-size:11.5px;color:var(--ink2);margin-top:8px">点击方格设置当天预设安排（早于今天的会存到下周同天）；「快速安排」随机填入一天</div></div>');
   const grid=card.querySelector('#wp-grid');
   for(let i=0;i<7;i++){
     const key=String(i+1);
-    const has=!!wp[key];
-    const cell=h('<div style="display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0"><span style="font-size:11.5px;color:'+(has?'var(--ink)':'var(--ink2)')+'">'+WEEKPLAN_DAYS[i].slice(1)+'</span><button type="button" class="wp-cell" data-day="'+key+'" title="'+WEEKPLAN_DAYS[i]+'" style="width:100%;aspect-ratio:1;border-radius:8px;background:'+WEEKPLAN_COLORS[i]+';opacity:'+(has?'1':'.35')+';box-shadow:'+(has?'var(--shadow)':'none')+';position:relative;cursor:pointer;padding:0">'+(has?'<span style="position:absolute;left:50%;top:50%;width:8px;height:8px;border-radius:50%;background:#fff;transform:translate(-50%,-50%)"></span>':'')+'</button></div>');
+    const has=!!cur[key];
+    const isToday=Number(key)===todayN;
+    const cell=h('<div style="display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0"><span style="font-size:11.5px;color:'+(isToday?'var(--ink)':'var(--ink2)')+(isToday?';font-weight:700':'')+'">'+WEEKPLAN_DAYS[i].slice(1)+'</span><button type="button" class="wp-cell" data-day="'+key+'" title="'+WEEKPLAN_DAYS[i]+'" style="width:100%;aspect-ratio:1;border-radius:8px;background:'+WEEKPLAN_COLORS[i]+';opacity:'+(has?'1':'.35')+';box-shadow:'+(has?'var(--shadow)':'none')+';border:'+(isToday?'2px solid #4A3F35':'2px solid transparent')+';position:relative;cursor:pointer;padding:0">'+(has?'<span style="position:absolute;left:50%;top:50%;width:8px;height:8px;border-radius:50%;background:#fff;transform:translate(-50%,-50%)"></span>':'')+'</button></div>');
     cell.querySelector('.wp-cell').onclick=async()=>{
-      const s=h('<div class="sheet"><h3>'+WEEKPLAN_DAYS[i]+'预设安排 · '+esc(item.name)+'</h3><textarea class="textarea" id="wp-inp" placeholder="如 19:00 有氧半小时（留空保存即清除）"></textarea><div class="row"><button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
-      s.querySelector('#wp-inp').value=wp[key]||'';
+      // 该天星期数早于今天 → 存下一周同天；否则存本周
+      const targetWeek=Number(key)<todayN?nextWeek:curWeek;
+      const wkLabel=targetWeek===curWeek?'本周':'下周';
+      const tw=wp[targetWeek]||{};
+      const s=h('<div class="sheet"><h3>'+wkLabel+WEEKPLAN_DAYS[i]+'预设安排 · '+esc(item.name)+'</h3><textarea class="textarea" id="wp-inp" placeholder="如 19:00 有氧半小时（留空保存即清除）"></textarea><div class="row"><button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
+      s.querySelector('#wp-inp').value=tw[key]||'';
       const m=modal(s);
       s.querySelector('[data-x=no]').onclick=()=>closeModal(m);
       s.querySelector('[data-x=ok]').onclick=async()=>{
         const v=s.querySelector('#wp-inp').value.trim();
         item.weekPlan=item.weekPlan||{};
-        if(v)item.weekPlan[key]=v;else delete item.weekPlan[key];
+        item.weekPlan[targetWeek]=item.weekPlan[targetWeek]||{};
+        if(v)item.weekPlan[targetWeek][key]=v;else delete item.weekPlan[targetWeek][key];
         await DB.put('items',item);
         closeModal(m);
-        toast('已保存'+WEEKPLAN_DAYS[i]+'安排');
+        toast('已保存'+wkLabel+WEEKPLAN_DAYS[i]+'安排');
         renderWeekPlan(host,item);
       };
     };
     grid.appendChild(cell);
   }
-  // 快速安排：输入一条内容，随机分配到一周中尚未设置的一天
+  // 快速安排：输入一条内容，随机分配到本周尚未设置的一天
   card.querySelector('#wp-quick').onclick=async()=>{
     const v=await promptBox('输入安排内容（随机分配到一天）','');
     if(!v)return;
-    const empty=[];for(let i=1;i<=7;i++)if(!wp[String(i)])empty.push(String(i));
+    const empty=[];for(let i=1;i<=7;i++)if(!cur[String(i)])empty.push(String(i));
     if(!empty.length){toast('本周 7 天都已有安排');return;}
     const key=empty[Math.floor(Math.random()*empty.length)];
     item.weekPlan=item.weekPlan||{};
-    item.weekPlan[key]=v;
+    item.weekPlan[curWeek]=item.weekPlan[curWeek]||{};
+    item.weekPlan[curWeek][key]=v;
     await DB.put('items',item);
     toast('已随机安排到'+WEEKPLAN_DAYS[Number(key)-1]);
     renderWeekPlan(host,item);
@@ -1332,14 +1349,12 @@ async function renderSpec(host,item,topSlot,marked,aboveSlot){
     // 功能入口 chips：文案按模块名生成；长按可隐藏，行尾「＋」恢复
     const feats=[
       {k:'weekStat',lab:'本周统计',go:()=>Router.go('weekStat',{itemId:item.id})},
-      {k:'foodCost',lab:item.name+'开销',go:()=>Router.go('foodCost',{itemId:item.id})},
-      {k:'gallery',lab:item.name+'图鉴',go:()=>Router.go('folder',{bucket:bp+'dish-gallery',name:item.name+'图鉴'})},
-      {k:'dishTodo',lab:'待做'+item.name,go:()=>Router.go('folder',{bucket:bp+'dish-todo',name:'待做'+item.name})},
+      {k:'gallery',lab:'图鉴',go:()=>Router.go('folder',{bucket:bp+'dish-gallery',name:'图鉴'})},
       {k:'tips',lab:'小 Tip',go:()=>Router.go('folder',{bucket:bp+'eat-tips',name:'小 Tip'})},
-      {k:'grocery',lab:item.name+'价格表',go:()=>Router.go('grocery',{itemId:item.id})}
+      {k:'grocery',lab:'采购记录',go:()=>Router.go('grocery',{itemId:item.id})}
     ];
     const dis=item.disabledFeats||[];
-    const row=h('<div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 12px"></div>');
+    const row=h('<div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 16px 12px"></div>');
     for(const f of feats){
       if(dis.indexOf(f.k)>=0)continue;
       const c=h('<button class="tagchip feat-chip" style="padding:6px 14px;font-size:13.5px">'+esc(f.lab)+'</button>');
@@ -1887,7 +1902,7 @@ Pages.entryEditor={
   async render(p){
     const isNew=!p.entryId;
     const entry=isNew?{id:uid(),bucket:p.bucket,title:'',text:'',imageIds:[],createdAt:Date.now()}:await DB.get('entries',p.entryId);
-    const bucketName=p.name||(await (async()=>{const all=[['sew-inspiration','灵感收集'],['sew-gallery','缝纫图鉴'],['sew-tips','小 Tip'],['dish-gallery','新菜图鉴'],['dish-todo','待做菜谱'],['skill-new','新技能'],['skill-note','注意事项']];const f=all.find(a=>a[0]===entry.bucket);return f?f[1]:'';})());
+    const bucketName=p.name||(await (async()=>{const all=[['sew-inspiration','灵感收集'],['sew-gallery','缝纫图鉴'],['sew-tips','小 Tip'],['dish-gallery','图鉴'],['skill-new','新技能'],['skill-note','注意事项']];const f=all.find(a=>a[0]===entry.bucket);return f?f[1]:'';})());
     const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+(isNew?'新增':'编辑')+' · '+esc(bucketName)+'</h1></div><div class="editor"><div class="field"><label>标题</label><input class="input" placeholder="给这条起个名字"></div><div class="field"><label>内容</label><textarea class="textarea" placeholder="随便写点什么…"></textarea></div><div class="field"><label>图片（最多 3 张）</label><div></div></div><div class="btnrow"><button class="btn" data-x="back">取消</button><button class="btn primary" data-x="save">保存</button></div></div></div>');
     const titleIn=el.querySelector('.input');titleIn.value=entry.title||'';
     const textIn=el.querySelector('textarea');textIn.value=entry.text||'';
@@ -2412,7 +2427,7 @@ Pages.settings={
     };
     el.querySelector('#s-clear').onclick=async()=>{
       const y1=await confirmBox('⚠ 确定要清空所有数据吗？此操作不可恢复！',{danger:true,okText:'确认清空'});if(!y1)return;
-      const y2=await confirmBox('请再次确认：所有打卡记录、图片、书籍、体重等数据都会被删除！',{danger:true,okText:'再次确认清空'});if(!y2)return;
+      const y2=await confirmBox('请再次确认：所有打卡记录、图片、阅读、体重等数据都会被删除！',{danger:true,okText:'再次确认清空'});if(!y2)return;
       await clearAllDB();
       toast('已清空所有数据');
       Router.refresh();
@@ -2517,70 +2532,35 @@ Pages.weekStat={
   }
 };
 
-/* ===== 饮食开销月统计页 ===== */
-Pages.foodCost={
-  async render(p){
-    const now=new Date();
-    let state={y:now.getFullYear(),m:now.getMonth()};
-    const item=p&&p.itemId?await DB.get('items',p.itemId):null;
-    const itemId=item?item.id:null;
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><button class="iconbtn" data-x="prev">‹</button><h1 class="hand">'+(item?esc(item.name):'饮食')+'开销</h1><button class="iconbtn" data-x="next">›</button></div><div id="fc-body" style="padding:4px 16px 30px"></div></div>');
-    const body=el.querySelector('#fc-body');
-    async function redraw(){
-      body.innerHTML='';
-      const ym=state.y+'-'+String(state.m+1).padStart(2,'0');
-      body.appendChild(h('<div class="fmonth">'+state.y+'年'+(state.m+1)+'月</div>'));
-      let all=await DB.all('meals');
-      if(itemId)all=all.filter(x=>x.itemId===itemId);
-      const month=all.filter(x=>(x.date||'').indexOf(ym)===0);
-      let cost=0,market=0;
-      const byDate={};
-      for(const m of month){
-        for(const d of mealDishes(m)){
-          const p=parseFloat(d.price),mk=parseFloat(d.market);
-          const hp=!isNaN(p)&&p>0,hm=!isNaN(mk)&&mk>0;
-          if(hp)cost+=p;
-          if(hm)market+=mk;
-          if(hp||hm){
-            const rec=byDate[m.date]||(byDate[m.date]={p:0,mk:0});
-            if(hp)rec.p+=p;
-            if(hm)rec.mk+=mk;
-          }
-        }
-      }
-      const head=h('<div class="fchead"><div class="fccard"><div class="fclabel">实际消费（食材价格）</div><div class="fcnum">¥'+cost.toFixed(2)+'</div></div><div class="fccard"><div class="fclabel">节约成本（市场价合计）</div><div class="fcnum">¥'+market.toFixed(2)+'</div></div></div>');
-      body.appendChild(head);
-      const days=Object.keys(byDate).sort((a,b)=>b.localeCompare(a));
-      if(!days.length){body.appendChild(h('<div class="empty">本月还没有价格记录</div>'));return;}
-      const box=h('<div class="wcard"><div class="wday">按日明细</div></div>');
-      for(const d of days){
-        box.appendChild(h('<div class="fcrow"><span>'+cnDay(d)+'</span><span>实际 ¥'+byDate[d].p.toFixed(2)+' · 市场 ¥'+byDate[d].mk.toFixed(2)+'</span></div>'));
-      }
-      body.appendChild(box);
-    }
-    await redraw();
-    el.querySelector('[data-x=prev]').onclick=()=>{state.m--;if(state.m<0){state.m=11;state.y--;}redraw();};
-    el.querySelector('[data-x=next]').onclick=()=>{state.m++;if(state.m>11){state.m=0;state.y++;}redraw();};
-    return el;
-  }
-};
-
-/* ===== 购入食材价格表页 ===== */
-function openGroceryForm(onSaved,itemId){ // 记一笔：单价=总价÷数量自动算出，可手动覆盖
+/* ===== 采购记录页 ===== */
+function openGroceryForm(onSaved,itemId){ // 记一笔：总价支持加减乘除表达式，单价=总价÷数量自动算出，可手动覆盖
   const sheet=h('<div class="sheet"><h3>记一笔食材</h3>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">食材名称</label><input class="input" id="gr-name" placeholder="如 鸡蛋"></div>'
-    +'<div style="display:flex;gap:10px"><div style="flex:1;margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">总价（元）</label><input type="number" step="0.01" min="0" class="input" id="gr-total" placeholder="如 15.8"></div>'
-    +'<div style="flex:1;margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">数量（kg）</label><input type="number" step="0.01" min="0" class="input" id="gr-qty" placeholder="如 2（默认按 kg）"></div></div>'
-    +'<div style="display:flex;gap:10px"><div style="flex:1;margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">单价（自动算，可改）</label><input type="number" step="0.01" min="0" class="input" id="gr-price" placeholder="自动计算"></div>'
+    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">总价（元，支持 + - * /，如 12.5+3*2）</label><input class="input" id="gr-total" inputmode="decimal" placeholder="如 15.8 或 12.5+3*2"></div>'
+    +'<div style="display:flex;gap:10px;margin:10px 0"><div style="flex:1"><label id="gr-qty-lab" style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">数量（kg）</label><input type="number" step="0.01" min="0" class="input" id="gr-qty" placeholder="如 2"></div>'
+    +'<div style="flex:none;width:84px"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">单位</label><select class="input" id="gr-unit"><option value="kg" selected>kg</option><option value="g">g</option></select></div></div>'
+    +'<div style="display:flex;gap:10px"><div style="flex:1;margin:10px 0"><label id="gr-price-lab" style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">单价（元/kg，自动算，可改）</label><input type="number" step="0.0001" min="0" class="input" id="gr-price" placeholder="自动计算"></div>'
     +'<div style="flex:1;margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">时间</label><input type="date" class="input" id="gr-date"></div></div>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">备注</label><input class="input" id="gr-note" placeholder="选填"></div>'
     +'<div class="row"><button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
   const m=modal(sheet);
   sheet.querySelector('#gr-date').value=todayKey();
-  const tIn=sheet.querySelector('#gr-total'),qIn=sheet.querySelector('#gr-qty'),pIn=sheet.querySelector('#gr-price');
+  const tIn=sheet.querySelector('#gr-total'),qIn=sheet.querySelector('#gr-qty'),pIn=sheet.querySelector('#gr-price'),uSel=sheet.querySelector('#gr-unit');
+  function exprVal(s){ // 安全计算四则表达式：只允许数字与 + - * / ( ) 和空格
+    s=(s||'').trim();
+    if(!s)return NaN;
+    if(!/^[0-9+\-*/().\s]+$/.test(s))return NaN;
+    try{const v=Function('"use strict";return ('+s+')')();return (typeof v==='number'&&isFinite(v))?v:NaN;}catch(e){return NaN;}
+  }
+  function updUnitLab(){
+    const u=uSel.value;
+    sheet.querySelector('#gr-qty-lab').textContent='数量（'+u+'）';
+    sheet.querySelector('#gr-price-lab').textContent='单价（元/'+u+'，自动算，可改）';
+  }
+  uSel.onchange=updUnitLab;
   function autoPrice(){ // 总价÷数量 自动填单价
-    const t=parseFloat(tIn.value),q=parseFloat(qIn.value);
-    if(!isNaN(t)&&!isNaN(q)&&q>0)pIn.value=(t/q).toFixed(2);
+    const t=exprVal(tIn.value),q=parseFloat(qIn.value);
+    if(!isNaN(t)&&!isNaN(q)&&q>0)pIn.value=+((t/q).toFixed(4));
   }
   tIn.addEventListener('input',autoPrice);
   qIn.addEventListener('input',autoPrice);
@@ -2588,10 +2568,16 @@ function openGroceryForm(onSaved,itemId){ // 记一笔：单价=总价÷数量�
   sheet.querySelector('[data-x="ok"]').onclick=async()=>{
     const name=sheet.querySelector('#gr-name').value.trim();
     if(!name){toast('请填写食材名称');return;}
+    let total=NaN;
+    if(tIn.value.trim()!=='')total=exprVal(tIn.value);
+    if(!isNaN(total)||tIn.value.trim()!==''){
+      if(isNaN(total)){toast('总价格式不对，只能用数字和 + - * /');return;}
+    }
     const rec={id:uid(),itemId:itemId||null,name:name,
-      total:tIn.value===''?null:parseFloat(tIn.value),
+      total:isNaN(total)?null:+total.toFixed(4),
       qty:qIn.value===''?null:parseFloat(qIn.value),
       price:pIn.value===''?null:parseFloat(pIn.value),
+      unit:uSel.value,
       date:sheet.querySelector('#gr-date').value||todayKey(),
       note:sheet.querySelector('#gr-note').value.trim()};
     await DB.put('groceries',rec);
@@ -2606,7 +2592,7 @@ Pages.grocery={
     let state={y:now.getFullYear(),m:now.getMonth()};
     const item=p&&p.itemId?await DB.get('items',p.itemId):null;
     const itemId=item?item.id:null;
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><button class="iconbtn" data-x="prev">‹</button><h1 class="hand">'+(item?esc(item.name):'购入食材')+'价格表</h1><button class="iconbtn" data-x="next">›</button></div><div id="gr-body" style="padding:4px 16px 30px"></div></div>');
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><button class="iconbtn" data-x="prev">‹</button><h1 class="hand">'+(item?esc(item.name):'饮食')+'采购记录</h1><button class="iconbtn" data-x="next">›</button></div><div id="gr-body" style="padding:4px 16px 30px"></div></div>');
     const body=el.querySelector('#gr-body');
     async function redraw(){
       body.innerHTML='';
@@ -2623,9 +2609,10 @@ Pages.grocery={
       body.appendChild(add);
       if(!month.length){body.appendChild(h('<div class="empty">本月还没有购入记录</div>'));return;}
       for(const x of month){
+        const u=x.unit||'kg'; // 旧记录无单位按 kg
         const unit=(parseFloat(x.total)||0)/(parseFloat(x.qty)||1);
-        const priceStr=(x.price!==undefined&&x.price!==null&&x.price!=='')?'¥'+(+x.price).toFixed(2):'¥'+unit.toFixed(2)+'/kg';
-        const qtyStr=(x.qty!==undefined&&x.qty!==null&&x.qty!=='')?x.qty+' kg':'-';
+        const priceStr=(x.price!==undefined&&x.price!==null&&x.price!=='')?'¥'+(+x.price).toFixed(2)+'/'+u:'¥'+unit.toFixed(2)+'/'+u;
+        const qtyStr=(x.qty!==undefined&&x.qty!==null&&x.qty!=='')?x.qty+' '+u:'-';
         const row=h('<div class="listitem"><div class="li-main"><div class="li-title">'+esc(x.name||'未命名食材')+'</div><div class="li-sub">'+esc(x.date||'')+' · 数量 '+esc(String(qtyStr))+' · 单价 '+priceStr+(x.note?' · '+esc(x.note):'')+'</div></div><button class="btn" style="padding:4px 10px;font-size:12px;color:var(--danger);flex:none">删</button></div>');
         row.querySelector('button').onclick=async()=>{
           const y=await confirmBox('删除「'+esc(x.name||'未命名食材')+'」这笔记录？',{danger:true,okText:'删除'});
@@ -2701,9 +2688,9 @@ Pages.readShelf={
     const item=p&&p.itemId?await DB.get('items',p.itemId):null;
     const itemId=item?item.id:null;
     const shelfTitle=item&&item.kind==='custom'?('我的'+item.name):'我的书架';
-    let tab='read';
+    let tab='reading';
     let shelfTag='全部';
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(shelfTitle)+'</h1><button class="iconbtn plain" id="shelf-mng">管理</button></div><div style="padding:0 16px 8px"><div class="seg" id="shelf-tabs"><button data-t="read" class="on">已看</button><button data-t="want">想看</button></div></div><div id="shelf-tags" style="padding:0 16px 10px;display:none;gap:8px;flex-wrap:wrap"></div><div class="cal" id="read-timer" style="margin:0 16px 12px"><div class="cal-head"><div class="cal-title">今日阅读</div><div id="rt-total" style="font-size:13px;color:var(--ink2)"></div></div><div id="rt-list"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="rt-start">开始计时</button><button class="btn" id="rt-add">补录时长</button></div></div><div class="shelf" id="shelf"></div></div>');
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(shelfTitle)+'</h1><button class="iconbtn plain" id="shelf-mng">管理</button></div><div style="padding:0 16px 8px"><div class="seg" id="shelf-tabs"><button data-t="reading" class="on">在读</button><button data-t="read">已看</button><button data-t="want">想看</button></div></div><div id="shelf-tags" style="padding:0 16px 10px;display:none;gap:8px;flex-wrap:wrap"></div><div class="cal" id="read-timer" style="margin:0 16px 12px"><div class="cal-head"><div class="cal-title">今日阅读</div><div id="rt-total" style="font-size:13px;color:var(--ink2)"></div></div><div id="rt-list"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="rt-start">开始计时</button><button class="btn" id="rt-add">补录时长</button></div></div><div class="shelf" id="shelf"></div></div>');
     const shelf=el.querySelector('#shelf');
     const tabs=el.querySelector('#shelf-tabs');
     let shelfManage=false,suppressClick=false;
@@ -2804,6 +2791,8 @@ Pages.readShelf={
     async function redraw(){
       shelf.innerHTML='';
       if(shelfManage)shelf.appendChild(h('<div style="grid-column:1/-1;font-size:12.5px;color:var(--ink2);padding:2px 2px 0">长按拖动卡片调整顺序，点 ✕ 隐藏</div>'));
+      // 今日阅读计时卡片仅在「在读」tab 显示
+      rtCard.style.display=tab==='reading'?'':'none';
       let allBooks=await DB.all('books');
       if(itemId)allBooks=allBooks.filter(b=>b.itemId===itemId);
       // 排序：order 优先（管理态长按拖拽写入），未设置的按创建时间倒序；隐藏书不在书架显示
@@ -2834,14 +2823,18 @@ Pages.readShelf={
       }else tagBar.style.display='none';
       const wantN=allBooks.filter(b=>(b.status||'read')==='want'&&!b.hidden).length;
       const readN=allBooks.filter(b=>(b.status||'read')==='read'&&!b.hidden).length;
+      const readingN=allBooks.filter(b=>(b.status||'read')==='reading'&&!b.hidden).length;
       tabs.querySelector('[data-t=want]').textContent='想看 '+wantN;
       tabs.querySelector('[data-t=read]').textContent='已看 '+readN;
+      tabs.querySelector('[data-t=reading]').textContent='在读 '+readingN;
       el.querySelector('#shelf-mng').textContent=shelfManage?'完成':'管理';
       if(!books.length){ // 自定义阅读模块按模块名生成空状态文案
         const cn=item&&item.kind==='custom'?item.name:'';
         const msg=tab==='want'
           ?(cn?('想看的'+esc(cn)+'在这里'):'想看的书会显示在这里')
-          :(cn?('还没有'+esc(cn)+'记录'):'还没有书籍记录');
+          :(tab==='reading'
+            ?(cn?('在读的'+esc(cn)+'在这里'):'在读的书会显示在这里')
+            :(cn?('还没有'+esc(cn)+'记录'):'还没有记录'));
         shelf.appendChild(h('<div class="empty" style="grid-column:1/-1">'+msg+'</div>'));
       }
       for(const b of books){
@@ -2857,7 +2850,7 @@ Pages.readShelf={
           if(shelfManage)return;
           lp=setTimeout(()=>{
             lp=null;
-            const s=h('<div class="sheet"><h3>'+esc(b.title)+'</h3><div style="display:flex;flex-direction:column;gap:10px"><button class="btn" id="bkr-edit">✏ 编辑书名</button><button class="btn danger" id="bkr-del">🗑 删除书籍</button><button class="btn" id="bkr-move">'+(tab==='read'?'📚 移到「想看」':'✅ 移到「已看」')+'</button><button class="btn" id="bkr-hide">🙈 隐藏</button><button class="btn" id="bkr-no">取消</button></div></div>');
+            const s=h('<div class="sheet"><h3>'+esc(b.title)+'</h3><div style="display:flex;flex-direction:column;gap:10px"><button class="btn" id="bkr-edit">✏ 编辑书名</button><button class="btn danger" id="bkr-del">🗑 删除</button><button class="btn" id="bkr-move">'+(tab==='reading'?'✅ 移到「已看」':tab==='want'?'📖 移到「在读」':'📚 移到「想看」')+'</button><button class="btn" id="bkr-hide">🙈 隐藏</button><button class="btn" id="bkr-no">取消</button></div></div>');
             const m=modal(s);
             s.querySelector('#bkr-no').onclick=()=>closeModal(m);
             s.querySelector('#bkr-edit').onclick=async()=>{
@@ -2866,7 +2859,7 @@ Pages.readShelf={
               if(v&&v!==b.title){b.title=v;await DB.put('books',b);redraw();}
             };
             s.querySelector('#bkr-move').onclick=async()=>{
-              b.status=tab==='read'?'want':'read';
+              b.status=tab==='reading'?'read':tab==='want'?'reading':'want';
               await DB.put('books',b);closeModal(m);toast('已移动');redraw();
             };
             s.querySelector('#bkr-hide').onclick=async()=>{
@@ -2904,14 +2897,14 @@ Pages.readShelf={
           }
           sec.appendChild(row);
         }else{
-          sec.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">暂无隐藏的书籍</div>'));
+          sec.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">暂无隐藏记录</div>'));
         }
         shelf.appendChild(sec);
       }
       // 添加按钮（添加到当前文件夹）
       const add=h('<div class="bk add" style="aspect-ratio:3/4">＋</div>');
       add.onclick=async()=>{
-        const name=await promptBox('书名（添加到「'+(tab==='want'?'想看':'已看')+'」）');
+        const name=await promptBox('书名（添加到「'+(tab==='want'?'想看':tab==='read'?'已看':'在读')+'」）');
         if(!name)return;
         const nb={id:uid(),itemId:itemId||null,title:name,author:'',status:tab,rating:0,review:'',coverId:'',createdAt:Date.now()};
         await DB.put('books',nb);
@@ -2924,7 +2917,7 @@ Pages.readShelf={
   }
 };
 
-/* 解析粘贴的书籍信息（支持豆瓣等格式）：作者/译者/出版社/页数/定价/简介 */
+/* 解析粘贴的图书信息（支持豆瓣等格式）：作者/译者/出版社/页数/定价/简介 */
 function parseBookInfo(text){
   const out={};
   const re=/^[ \t]*(作者|译者|编者|出版社|出品方|出版年|页数|定价|字数|ISBN)[ \t]*[:：][ \t]*(.*)$/gm;
@@ -2955,12 +2948,12 @@ function parseBookInfo(text){
   return out;
 }
 
-/* ===== J12 书籍详情页 ===== */
+/* ===== J12 图书详情页 ===== */
 Pages.bookDetail={
   async render(p){
     const book=await DB.get('books',p.id);
     if(!book){Router.back();return h('<div></div>');}
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand" id="bd-title"></h1><button class="iconbtn" id="bd-del" title="删除">🗑</button></div><div style="padding:4px 16px 40px"><div style="display:flex;gap:14px;align-items:flex-start"><div id="bd-coverbox" style="flex:none"></div><div style="flex:1;min-width:0"><button class="btn" id="bd-status" style="margin:6px 0"></button><div class="stars" style="margin:8px 0" id="bd-stars"></div></div></div><div id="bd-fields" style="margin:14px 0 4px"></div><div id="bd-tags" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:2px 2px 12px;border-bottom:1px solid var(--line)"></div><div class="field"><label>简介</label><textarea class="textarea" id="bd-intro" rows="6" placeholder="书籍简介…"></textarea></div><div class="field"><label>所思</label><textarea class="textarea" id="bd-review" rows="8" placeholder="写点什么…"></textarea></div><div class="field"><label>粘贴书籍信息自动识别（支持豆瓣等复制内容）</label><textarea class="textarea" id="bd-paste" rows="5" placeholder="把复制的书籍信息粘贴到这里，点下方按钮自动识别作者、译者、出版社、页数、简介"></textarea><button class="btn primary" id="bd-parse" style="margin-top:8px">识别并填充</button></div></div></div>');
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand" id="bd-title"></h1><button class="iconbtn" id="bd-del" title="删除">🗑</button></div><div style="padding:4px 16px 40px"><div style="display:flex;gap:14px;align-items:flex-start"><div id="bd-coverbox" style="flex:none"></div><div style="flex:1;min-width:0"><button class="btn" id="bd-status" style="margin:6px 0"></button><div class="stars" style="margin:8px 0" id="bd-stars"></div></div></div><div class="cal" id="bd-rt" style="margin:14px 0 4px"><div class="cal-head"><div class="cal-title">今日阅读</div><div id="bd-rt-total" style="font-size:13px;color:var(--ink2)"></div></div><div id="bd-rt-list"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="bd-rt-start">开始计时</button><button class="btn" id="bd-rt-add">补录时长</button></div><div style="display:flex;gap:8px;align-items:center;margin-top:10px"><input class="input" id="bd-page" type="number" min="0" placeholder="读到第几页" style="flex:1"><button class="btn" id="bd-page-save">保存页数</button><span class="saved" id="bd-page-saved">已保存</span></div></div><div id="bd-fields" style="margin:14px 0 4px"></div><div id="bd-tags" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:2px 2px 12px;border-bottom:1px solid var(--line)"></div><div class="field"><label>简介</label><textarea class="textarea" id="bd-intro" rows="6" placeholder="图书简介…"></textarea></div><div class="field"><label>所思</label><textarea class="textarea" id="bd-review" rows="8" placeholder="写点什么…"></textarea></div><div class="field"><label>粘贴图书信息自动识别（支持豆瓣等复制内容）</label><textarea class="textarea" id="bd-paste" rows="5" placeholder="把复制的图书信息粘贴到这里，点下方按钮自动识别作者、译者、出版社、页数、简介"></textarea><button class="btn primary" id="bd-parse" style="margin-top:8px">识别并填充</button></div></div></div>');
     el.querySelector('#bd-title').textContent=book.title;
     // 封面
     const coverbox=el.querySelector('#bd-coverbox');
@@ -2978,15 +2971,16 @@ Pages.bookDetail={
       }
     }
     drawCover();
-    // 想看/已看状态
+    // 想看/在读/已看状态
     const stBtn=el.querySelector('#bd-status');
-    function refreshStatus(){stBtn.textContent=(book.status||'read')==='want'?'🔖 想看 · 点击移入「已看」':'✅ 已看 · 点击移入「想看」';}
+    function refreshStatus(){const s=book.status||'read';stBtn.textContent=s==='want'?'🔖 想看 · 点击移入「在读」':s==='reading'?'📖 在读 · 点击移入「已看」':'✅ 已看 · 点击移入「想看」';}
     refreshStatus();
     stBtn.onclick=async()=>{
-      book.status=(book.status||'read')==='want'?'read':'want';
+      const s=book.status||'read';
+      book.status=s==='want'?'reading':s==='reading'?'read':'want';
       await DB.put('books',book);
       refreshStatus();
-      toast(book.status==='want'?'已移入「想看」':'已移入「已看」');
+      toast(book.status==='want'?'已移入「想看」':book.status==='reading'?'已移入「在读」':'已移入「已看」');
     };
     // 星星（.stars 样式：灰色未点亮 / 沙金色点亮）
     const starBox=el.querySelector('#bd-stars');
@@ -2999,67 +2993,129 @@ Pages.bookDetail={
       }
     }
     drawStars();
-    // 书籍信息字段：默认显示 作者/完成日期（译者/出版社/页数/定价默认隐藏，可自行添加回或隐藏）
-    const BD_FIELDS=[['author','作者'],['translator','译者'],['publisher','出版社'],['pages','页数'],['price','定价'],['finishDate','完成日期']];
-    const DEFAULT_BD_HIDDEN=['translator','publisher','pages','price'];
-    function bdHiddenSet(){return new Set(Array.isArray(book.bdHidden)?book.bdHidden:DEFAULT_BD_HIDDEN);}
+    /* ===== 今日阅读计时 + 读到第几页（在读图书） ===== */
+    const bdRtCard=el.querySelector('#bd-rt');
+    let bdRtStart=null,bdRtTick=null;
+    function bdRtFmt(sec){return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');}
+    async function bdSaveRead(mins,src){
+      const pg=parseInt(el.querySelector('#bd-page').value,10);
+      const rec={id:uid(),itemId:book.itemId||null,bookId:book.id,date:todayKey(),text:'阅读 '+mins+' 分钟'+(pg?(' · 读到第 '+pg+' 页'):'')+(src==='补录'?'（补录）':''),imageIds:[],minutes:mins,page:pg||null,updatedAt:Date.now(),createdAt:Date.now()};
+      await DB.put('records',rec);
+      if(pg&&pg!==(book.currentPage||0)){book.currentPage=pg;await DB.put('books',book);}
+      toast('已记录 '+mins+' 分钟');
+      bdRtRedraw();
+    }
+    async function bdRtRedraw(){
+      const tk=todayKey();
+      const rs=(await DB.all('records')).filter(r=>r.bookId===book.id&&r.date===tk&&r.minutes).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+      bdRtCard.querySelector('#bd-rt-total').textContent='今日已读 '+rs.reduce((s,r)=>s+(r.minutes||0),0)+' 分钟';
+      const list=bdRtCard.querySelector('#bd-rt-list');
+      list.innerHTML='';
+      if(!rs.length){list.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">今天还没有这本书的阅读记录</div>'));return;}
+      rs.forEach(r=>{
+        const row=h('<div style="display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:2px 0"></div>');
+        const t1=h('<span></span>');t1.textContent=r.text||('阅读 '+(r.minutes||0)+' 分钟');
+        const t2=h('<span style="color:var(--ink2);flex:none"></span>');t2.textContent=r.createdAt?new Date(r.createdAt).toTimeString().slice(0,5):'';
+        row.appendChild(t1);row.appendChild(t2);
+        list.appendChild(row);
+      });
+    }
+    bdRtCard.querySelector('#bd-rt-start').onclick=()=>{
+      const btn=bdRtCard.querySelector('#bd-rt-start');
+      if(bdRtStart){
+        const sec=Math.round((Date.now()-bdRtStart)/1000);
+        clearInterval(bdRtTick);bdRtStart=null;bdRtTick=null;
+        btn.textContent='开始计时';btn.classList.add('primary');
+        bdSaveRead(Math.max(1,Math.round(sec/60)),'计时');
+      }else{
+        bdRtStart=Date.now();
+        btn.classList.remove('primary');
+        btn.textContent='结束 '+bdRtFmt(0);
+        bdRtTick=setInterval(()=>{
+          if(!document.contains(btn)){clearInterval(bdRtTick);bdRtStart=null;bdRtTick=null;return;}
+          btn.textContent='结束 '+bdRtFmt(Math.floor((Date.now()-bdRtStart)/1000));
+        },1000);
+      }
+    };
+    bdRtCard.querySelector('#bd-rt-add').onclick=async()=>{
+      const v=await promptBox('补录时长（分钟）','',{placeholder:'如 30'});
+      const n=parseInt(v,10);
+      if(!n||n<=0)return;
+      bdSaveRead(Math.min(n,1440),'补录');
+    };
+    // 读到第几页（累计进度，随记录保存）
+    const pageInp=el.querySelector('#bd-page');
+    pageInp.value=book.currentPage||'';
+    el.querySelector('#bd-page-save').onclick=async()=>{
+      const n=parseInt(pageInp.value,10);
+      if(!n||n<=0){toast('请填写页数');return;}
+      book.currentPage=n;await DB.put('books',book);
+      const sv=el.querySelector('#bd-page-saved');sv.classList.add('show');setTimeout(()=>sv.classList.remove('show'),1500);
+    };
+    bdRtRedraw();
+    // 图书信息字段：默认仅 作者/完成日期；可自定义添加字段，字段可重命名/删除
+    function bdFields(){
+      if(!Array.isArray(book.fields)){
+        // 旧数据迁移：译者/出版社/页数/定价有值转为自定义字段（沿用旧 key），空的丢弃
+        const extra=[];
+        for(const [k,lab] of [['translator','译者'],['publisher','出版社'],['pages','页数'],['price','定价']]){
+          const v=book[k];
+          if(v!==undefined&&v!==null&&v!=='')extra.push({key:k,label:lab,type:'text'});
+        }
+        book.fields=[{key:'author',label:'作者',type:'text'},{key:'finishDate',label:'完成日期',type:'date'},...extra];
+        delete book.bdHidden;
+        DB.put('books',book);
+      }
+      return book.fields;
+    }
     const fieldsBox=el.querySelector('#bd-fields');
     function drawFields(){
       fieldsBox.innerHTML='';
-      const hid=bdHiddenSet();
-      for(const f of BD_FIELDS){
-        const k=f[0],lab=f[1];
-        if(hid.has(k))continue;
-        const row=h('<div class="bd-frow" data-k="'+k+'" style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);cursor:pointer"><span style="font-size:13px;color:var(--ink2);flex:none;width:60px">'+lab+'</span><span class="bd-fval" style="flex:1;min-width:0;font-size:14px;color:var(--ink2)"></span><span data-op="hide" title="隐藏" style="color:var(--ink2);font-size:13px;flex:none;padding:0 4px">－</span><span style="color:var(--ink2);font-size:12px;flex:none">✎</span></div>');
+      for(const f of bdFields()){
+        const row=h('<div class="bd-frow" style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);cursor:pointer"><span class="bd-flab" title="点击重命名" style="font-size:13px;color:var(--ink2);flex:none;min-width:60px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span><span class="bd-fval" style="flex:1;min-width:0;font-size:14px;color:var(--ink2)"></span><span data-op="del" title="删除字段" style="color:var(--ink2);font-size:13px;flex:none;padding:0 4px">✕</span></div>');
+        row.querySelector('.bd-flab').textContent=f.label;
         const val=row.querySelector('.bd-fval');
-        let v=book[k];
-        if(k==='pages'&&v)v=v+' 页';
-        if(k==='price'&&v!==''&&v!=null)v=v+' 元';
+        const v=book[f.key];
         if(v){val.textContent=v;val.style.color='var(--ink)';}else val.textContent='未填写';
-        row.querySelector('[data-op=hide]').onclick=e=>{e.stopPropagation();hideField(k,lab);};
-        row.onclick=()=>editBookField(k,lab);
+        row.querySelector('[data-op=del]').onclick=async e=>{
+          e.stopPropagation();
+          const y=await confirmBox('删除「'+f.label+'」字段及其内容？',{danger:true,okText:'删除'});
+          if(y){book.fields=bdFields().filter(x=>x.key!==f.key);delete book[f.key];await DB.put('books',book);drawFields();}
+        };
+        row.querySelector('.bd-flab').onclick=e=>{e.stopPropagation();renameField(f);};
+        row.onclick=()=>editBookField(f);
         fieldsBox.appendChild(row);
       }
-      // 添加信息行：列出被隐藏的字段，点击加回
-      const addable=BD_FIELDS.filter(f=>hid.has(f[0]));
-      if(addable.length){
-        const add=h('<div id="bd-addfield" style="display:flex;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--coffee);font-size:13.5px"></div>');
-        add.textContent='＋ 添加信息（'+addable.map(f=>f[1]).join('、')+'）';
-        add.onclick=()=>showAddFieldMenu(addable);
-        fieldsBox.appendChild(add);
-      }
+      // 添加信息行：输入自定义字段名
+      const add=h('<div id="bd-addfield" style="display:flex;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--coffee);font-size:13.5px"></div>');
+      add.textContent='＋ 添加信息';
+      add.onclick=async()=>{
+        const v=await promptBox('字段名称','',{placeholder:'如 译者、出版社'});
+        if(!v)return;
+        if(bdFields().some(x=>x.label===v)){toast('已有同名字段');return;}
+        book.fields=bdFields().concat([{key:'f_'+uid(),label:v,type:'text'}]);
+        await DB.put('books',book);
+        drawFields();
+      };
+      fieldsBox.appendChild(add);
     }
-    async function hideField(k,lab){
-      const s=bdHiddenSet();s.add(k);
-      book.bdHidden=[...s];await DB.put('books',book);
-      toast('已隐藏「'+lab+'」，点「＋ 添加信息」可加回');
-      drawFields();
+    async function renameField(f){
+      const v=await promptBox('重命名字段',f.label);
+      if(!v||v===f.label)return;
+      f.label=v;await DB.put('books',book);drawFields();
     }
-    function showAddFieldMenu(addable){
-      const s=h('<div class="sheet"><h3>添加信息</h3><div style="display:flex;flex-direction:column;gap:10px"></div></div>');
-      const box=s.querySelector('div');
-      for(const f of addable){
-        const b=h('<button class="btn"></button>');b.textContent=f[1];
-        b.onclick=async()=>{const st=bdHiddenSet();st.delete(f[0]);book.bdHidden=[...st];await DB.put('books',book);closeModal(m);drawFields();toast('已显示「'+f[1]+'」');};
-        box.appendChild(b);
-      }
-      const c=h('<button class="btn">取消</button>');c.onclick=()=>closeModal(m);box.appendChild(c);
-      const m=modal(s);
-    }
-    async function editBookField(k,lab){
-      const isDate=k==='finishDate';
-      const s=h('<div class="sheet"><h3>'+lab+'</h3><div style="margin:10px 0">'+(isDate?'<input type="date" class="input" id="bd-finp">':'<input class="input" id="bd-finp"'+(k==='pages'?' type="number" min="1" placeholder="如 356"':(k==='price'?' type="number" step="0.01" min="0" placeholder="如 59.80"':' placeholder="填写'+lab+'…'))+'">')+'</div><div class="row"><button class="btn" data-x="no">清除</button><button class="btn" data-x="cancel">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
+    function editBookField(f){
+      const isDate=f.type==='date';
+      const s=h('<div class="sheet"><h3>'+esc(f.label)+'</h3><div style="margin:10px 0">'+(isDate?'<input type="date" class="input" id="bd-finp">':'<input class="input" id="bd-finp" placeholder="填写'+esc(f.label)+'…">')+'</div><div class="row"><button class="btn" data-x="no">清除</button><button class="btn" data-x="cancel">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
       const inp=s.querySelector('#bd-finp');
-      inp.value=(book[k]==null?'':book[k]);
+      inp.value=(book[f.key]==null?'':book[f.key]);
       const m=modal(s);
       s.querySelector('[data-x=cancel]').onclick=()=>closeModal(m);
-      s.querySelector('[data-x=no]').onclick=async()=>{delete book[k];await DB.put('books',book);closeModal(m);drawFields();};
+      s.querySelector('[data-x=no]').onclick=async()=>{delete book[f.key];await DB.put('books',book);closeModal(m);drawFields();};
       s.querySelector('[data-x=ok]').onclick=async()=>{
         const v=(inp.value||'').trim();
-        if(!v)delete book[k];
-        else if(k==='pages')book[k]=parseInt(v,10)||v;
-        else if(k==='price'){const f=parseFloat(v);book[k]=isNaN(f)?v:f;}
-        else book[k]=v;
+        if(!v)delete book[f.key];
+        else book[f.key]=v;
         await DB.put('books',book);
         closeModal(m);
         drawFields();
@@ -3126,15 +3182,20 @@ Pages.bookDetail={
     const introTa=el.querySelector('#bd-intro');
     introTa.value=book.intro||'';
     bindAutosave(introTa,async v=>{book.intro=v;await DB.put('books',book);});
-    // 粘贴识别：解析后自动填充 作者/译者/出版社/页数/简介
+    // 粘贴识别：解析后自动填充，识别出的字段无对应则自动创建同名字段
     el.querySelector('#bd-parse').onclick=async()=>{
       const txt=el.querySelector('#bd-paste').value.trim();
-      if(!txt){toast('请先粘贴书籍信息');return;}
+      if(!txt){toast('请先粘贴图书信息');return;}
       const info=parseBookInfo(txt);
       const names={author:'作者',translator:'译者',publisher:'出版社',pages:'页数',price:'定价',intro:'简介'};
       const hits=Object.keys(names).filter(k=>info[k]);
-      if(!hits.length){toast('未识别到书籍信息，请检查内容');return;}
-      for(const k of hits)book[k]=info[k];
+      if(!hits.length){toast('未识别到图书信息，请检查内容');return;}
+      for(const k of hits){
+        if(k==='intro')continue;
+        let f=bdFields().find(x=>x.key===k||x.label===names[k]);
+        if(!f){f={key:k,label:names[k],type:'text'};book.fields=bdFields().concat([f]);}
+        book[f.key]=info[k];
+      }
       await DB.put('books',book);
       drawFields();
       if(info.intro)introTa.value=info.intro;
@@ -3205,6 +3266,11 @@ async function migrateOwnership(){ // 数据归属隔离：历史无 itemId 的�
     }
   }
 }
+async function purgeDishTodo(){ // 彻底下线「待做饮食」：清理历史文件夹条目数据
+  for(const e of await DB.all('entries')){
+    if(e.bucket==='dish-todo'||(e.bucket||'').endsWith('-dish-todo'))await DB.del('entries',e.id);
+  }
+}
 (async function boot(){
   try{await DB.open();}
   catch(e){
@@ -3214,6 +3280,7 @@ async function migrateOwnership(){ // 数据归属隔离：历史无 itemId 的�
   await seedIfEmpty();
   await ensureBuiltin();
   await migrateOwnership();
+  await purgeDishTodo();
   Router.start();
 })();
 
