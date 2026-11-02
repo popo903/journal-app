@@ -327,6 +327,7 @@ const DB=(()=>{
     skills:[{n:'category'}],
     inventory:[{n:'itemId'},{n:'createdAt'}],
     groceries:[{n:'date'}],
+    fridge:[{n:'itemId'}],
     images:[],
     settings:[],
     outbox:[],
@@ -406,7 +407,7 @@ const DB=(()=>{
 const Cloud=(()=>{
   const LS_CFG='cloud_config';
   const SYNC_EVERY=300000; // 后台同步间隔 5 分钟
-  const STORES=['items','records','entries','meals','exercises','bodyMetrics','books','skills','inventory','groceries','images','settings'];
+  const STORES=['items','records','entries','meals','exercises','bodyMetrics','books','skills','inventory','groceries','fridge','images','settings'];
   const keyOf=(store,val)=>val[store==='settings'?'key':'id'];
   let flushing=false,lastPullOk=0,lastErr='',pulling=false,exitBound=false;
 
@@ -818,7 +819,7 @@ let invManage=false; // 图鉴页管理模式
 function chooseSpecKind(){
   return new Promise(resolve=>{
     const kinds=[
-      {k:'sew',label:'输出类',sub:'缝纫 · 三文件夹'},
+      {k:'sew',label:'输出类',sub:'三文件夹'},
       {k:'read',label:'输入类',sub:'阅读 · 书架'},
       {k:'sport',label:'累计类',sub:'运动 · 流水与体重三围'},
       {k:'eat',label:'记录类',sub:'饮食 · 四餐记录'},
@@ -910,7 +911,7 @@ async function globalSearch(q){
   // 模块名
   for(const it of items){
     if((it.name||'').toLowerCase().indexOf(q)>=0)
-      push({t:'模块',label:it.name,date:'',text:(it.kind==='custom'&&it.specKind?({eat:'饮食',sew:'缝纫',sport:'运动',skill:'技能',read:'阅读',inventory:'图鉴'}[it.specKind]||'自定义模块'):(it.kind==='inventory'?'图鉴':'打卡模块')),go:()=>Router.go(it.kind==='custom'&&it.specKind==='read'?'readShelf':'item',{itemId:it.id,id:it.id})});
+      push({t:'模块',label:it.name,date:'',text:(it.kind==='custom'&&it.specKind?({eat:'饮食',sew:'输出类',sport:'运动',skill:'技能',read:'阅读',inventory:'图鉴'}[it.specKind]||'自定义模块'):(it.kind==='inventory'?'图鉴':'打卡模块')),go:()=>Router.go(it.kind==='custom'&&it.specKind==='read'?'readShelf':'item',{itemId:it.id,id:it.id})});
   }
   // 打卡记录文本
   for(const r of await DB.all('records')){
@@ -1036,13 +1037,13 @@ Pages.home={
       const set=sets[it.id]||new Set();
       const ok=set.has(today);
       const ek0=it.kind==='custom'?(it.specKind||'none'):it.kind;
-      let sub=(ok?'已打卡，坚持'+computeStreak(set)+'天':'未打卡');
+      let sub=(ok?'已打卡，坚持'+computeStreak(set)+'天':''); // 未打卡不显示副标题（技能模块除外）
       if(ek0==='skill'){ // 技能模块：只显示最新一条记录内容（不带日期）
         const arr=(skMap[it.id]||[]).slice().sort((a,b)=>((b.time||'').localeCompare(a.time||''))||((b.createdAt||0)-(a.createdAt||0)));
         const s=arr[0];
         sub=s?esc(s.title||s.text||'暂无记录'):'暂无记录';
       }
-      const li=h('<div class="hlistitem'+(homeManage?' manage':'')+'" data-id="'+it.id+'" style="--c:var(--'+it.color+')"><div class="licheck'+(ok?' ok':'')+'">'+(ok?'✓':'')+'</div><div class="libody"><div class="liname hand">'+esc(it.name)+'</div><div class="list'+(ek0==='skill'?'':(ok?' ok':''))+'">'+sub+'</div></div>'+(homeManage&&!it.builtin?'<button class="btn" data-op="del" style="padding:6px 12px;font-size:13px;color:var(--danger);flex:none">删除</button>':'')+'</div>');
+      const li=h('<div class="hlistitem'+(homeManage?' manage':'')+'" data-id="'+it.id+'" style="--c:var(--'+it.color+')"><div class="licheck'+(ok?' ok':'')+'">'+(ok?'✓':'')+'</div><div class="libody"><div class="liname hand">'+esc(it.name)+'</div><div class="list'+(ek0==='skill'?'':(ok?' ok':''))+'"'+((ek0!=='skill'&&!ok)?' style="display:none"':'')+'>'+sub+'</div></div>'+(homeManage&&!it.builtin?'<button class="btn" data-op="del" style="padding:6px 12px;font-size:13px;color:var(--danger);flex:none">删除</button>':'')+'</div>');
       li.onclick=async e=>{
         const op=e.target.closest('[data-op=del]');
         if(op){
@@ -1114,6 +1115,12 @@ Pages.home={
 
 /* ===== J6 通用事项页 ===== */
 function getRecord(itemId,date){return DB.byIndex('records','item_date',[itemId,date]).then(r=>r[0]||null);}
+async function syncExerciseRecord(itemId,date){ // 运动打卡联动 records：有运动则确保当日打卡记录；删空且记录无内容时移除
+  const exs=(await DB.byIndex('exercises','date',date)).filter(x=>x.itemId===itemId);
+  const r=await getRecord(itemId,date);
+  if(exs.length){ if(!r)await DB.put('records',{id:uid(),itemId,date,text:'',imageIds:[]}); }
+  else if(r&&!r.text&&!(r.imageIds||[]).length)await DB.del('records',r.id);
+}
 const IC_NOT='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><g fill="currentColor"><path d="M4.377 2c1.026 0 1.996.467 2.637 1.268l.2.25l-.706 3.892L6.4 8h3.405l-2.189 6.563L1.9 8.028A3.63 3.63 0 0 1 1 5.635v-.258A3.377 3.377 0 0 1 4.377 2"/><path d="M11.623 2A3.377 3.377 0 0 1 15 5.377v.258c0 .88-.32 1.73-.9 2.392l-5.248 5.998L11.193 7H7.6l.47-2.588l.916-1.144A3.38 3.38 0 0 1 11.623 2"/></g></svg>';
 const IC_DONE='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#F44336" d="M34 9c-4.2 0-7.9 2.1-10 5.4C21.9 11.1 18.2 9 14 9C7.4 9 2 14.4 2 21c0 11.9 22 24 22 24s22-12 22-24c0-6.6-5.4-12-12-12"/></svg>';
 const IC_TODAY='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#FFCDD2" d="M34 9c-4.2 0-7.9 2.1-10 5.4C21.9 11.1 18.2 9 14 9C7.4 9 2 14.4 2 21c0 11.9 22 24 22 24s22-12 22-24c0-6.6-5.4-12-12-12"/></svg>';
@@ -1223,7 +1230,7 @@ Pages.item={
       const qa=el.querySelector('#qadd');
       const qbox=ek0==='eat'
         ?h('<button class="skill-add" style="margin:6px 0 4px;padding:14px"><span class="plus">＋</span><span>快速记录今日</span></button>')
-        :h('<button class="skill-add" style="margin:6px 0 4px;padding:14px"><span class="plus">＋</span><span>快速记录今日缝纫</span></button>');
+        :h('<button class="skill-add" style="margin:6px 0 4px;padding:14px"><span class="plus">＋</span><span>快速记录今日</span></button>');
       qbox.onclick=()=>{if(ek0==='eat')openQuickEat(item);else openQuickSew(item);};
       qa.appendChild(qbox);
     }
@@ -1279,8 +1286,12 @@ function renderWeekPlan(host,item){
     const key=String(i+1);
     const has=!!cur[key];
     const isToday=Number(key)===todayN;
-    const cell=h('<div style="display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0"><span style="font-size:11.5px;color:'+(isToday?'var(--ink)':'var(--ink2)')+(isToday?';font-weight:700':'')+'">'+WEEKPLAN_DAYS[i].slice(1)+'</span><button type="button" class="wp-cell" data-day="'+key+'" title="'+WEEKPLAN_DAYS[i]+'" style="width:100%;aspect-ratio:1;border-radius:8px;background:'+WEEKPLAN_COLORS[i]+';opacity:'+(has?'1':'.35')+';box-shadow:'+(has?'var(--shadow)':'none')+';border:'+(isToday?'2px solid #4A3F35':'2px solid transparent')+';position:relative;cursor:pointer;padding:0">'+(has?'<span style="position:absolute;left:50%;top:50%;width:8px;height:8px;border-radius:50%;background:#fff;transform:translate(-50%,-50%)"></span>':'')+'</button></div>');
+    const done=(item.weekDone&&item.weekDone[curWeek]&&item.weekDone[curWeek][key])?true:false;
+    const CHECK_SVG='<svg viewBox="0 0 24 24" style="position:absolute;left:50%;top:50%;width:62%;height:62%;transform:translate(-50%,-50%);color:#fff;pointer-events:none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="m3.75 12.95l2.2 2.7c1.44 1.75 2.15 2.63 3.1 2.63s1.67-.88 3.1-2.65l8.1-10"/></svg>';
+    const cell=h('<div style="display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0"><span style="font-size:11.5px;color:'+(isToday?'var(--ink)':'var(--ink2)')+(isToday?';font-weight:700':'')+'">'+WEEKPLAN_DAYS[i].slice(1)+'</span><button type="button" class="wp-cell" data-day="'+key+'" title="'+WEEKPLAN_DAYS[i]+'" style="width:100%;aspect-ratio:1;border-radius:8px;background:'+WEEKPLAN_COLORS[i]+';opacity:'+(has||done?'1':'.35')+';box-shadow:'+((has||done)?'var(--shadow)':'none')+';border:'+(isToday?'2px solid #4A3F35':'2px solid transparent')+';position:relative;cursor:pointer;padding:0">'+(done?CHECK_SVG:(has?'<span style="position:absolute;left:50%;top:50%;width:8px;height:8px;border-radius:50%;background:#fff;transform:translate(-50%,-50%)"></span>':''))+'</button></div>');
+    let suppressWp=false; // 长按后短暂屏蔽 click，避免误开编辑弹窗
     cell.querySelector('.wp-cell').onclick=async()=>{
+      if(suppressWp)return;
       // 该天星期数早于今天 → 存下一周同天；否则存本周
       const targetWeek=Number(key)<todayN?nextWeek:curWeek;
       const wkLabel=targetWeek===curWeek?'本周':'下周';
@@ -1300,6 +1311,17 @@ function renderWeekPlan(host,item){
         renderWeekPlan(host,item);
       };
     };
+    // 长按方格＝切换当天完成状态（打勾），按周记录
+    bindLongPress(cell.querySelector('.wp-cell'),async()=>{
+      suppressWp=true;setTimeout(()=>suppressWp=false,400);
+      item.weekDone=item.weekDone||{};
+      item.weekDone[curWeek]=item.weekDone[curWeek]||{};
+      const nowDone=!item.weekDone[curWeek][key];
+      if(nowDone)item.weekDone[curWeek][key]=1;else delete item.weekDone[curWeek][key];
+      await DB.put('items',item);
+      toast(nowDone?'已完成'+WEEKPLAN_DAYS[i]:'已取消'+WEEKPLAN_DAYS[i]+'完成');
+      renderWeekPlan(host,item);
+    });
     grid.appendChild(cell);
   }
   // 快速安排：输入一条内容，随机分配到本周尚未设置的一天
@@ -1349,10 +1371,11 @@ async function renderSpec(host,item,topSlot,marked,aboveSlot){
     // 功能入口 chips：文案按模块名生成；长按可隐藏，行尾「＋」恢复
     const feats=[
       {k:'weekStat',lab:'本周统计',go:()=>Router.go('weekStat',{itemId:item.id})},
-      {k:'gallery',lab:'图鉴',go:()=>Router.go('folder',{bucket:bp+'dish-gallery',name:'图鉴'})},
+      {k:'gallery',lab:'图鉴',go:()=>Router.go('folder',{bucket:bp+'dish-gallery',name:'图鉴',itemId:item.id})},
       {k:'tips',lab:'小 Tip',go:()=>Router.go('folder',{bucket:bp+'eat-tips',name:'小 Tip'})},
       {k:'grocery',lab:'采购记录',go:()=>Router.go('grocery',{itemId:item.id})}
     ];
+    if(item.kind!=='custom')feats.push({k:'fridge',lab:'小冰箱',go:()=>Router.go('fridge',{itemId:item.id})}); // 小冰箱仅固定饮食模块生效
     const dis=item.disabledFeats||[];
     const row=h('<div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 16px 12px"></div>');
     for(const f of feats){
@@ -1404,6 +1427,7 @@ async function renderSpec(host,item,topSlot,marked,aboveSlot){
         if(!type){toast('请输入运动类型');return;}
         if(!min||min<1){toast('请输入分钟数');return;}
         await DB.put('exercises',{id:uid(),itemId:item.id,date,time:nowHM(),type,minutes:min});
+        await syncExerciseRecord(item.id,date);
         if(sheet.querySelector('#ex-fav').checked){ // 存为常见运动（同名覆盖分钟数）
           item.favSports=item.favSports||[];
           const ex=item.favSports.find(f=>f.name===type);
@@ -1425,6 +1449,7 @@ async function renderSpec(host,item,topSlot,marked,aboveSlot){
         const chip=h('<button class="tagchip" style="padding:6px 14px;font-size:13.5px">'+esc(f.name)+' <b style="font-weight:700">'+(f.minutes||'')+'</b><span style="font-size:11px;color:var(--ink2)">分</span></button>');
         bindDoubleTap(chip,async()=>{ // 双击＝记一条当日运动
           await DB.put('exercises',{id:uid(),itemId:item.id,date:todayKey(),time:nowHM(),type:f.name,minutes:f.minutes});
+          await syncExerciseRecord(item.id,todayKey());
           toast('已打卡：'+f.name+' '+(f.minutes||'')+' 分钟');
           Router.refresh();
         });
@@ -1453,7 +1478,7 @@ async function renderSpec(host,item,topSlot,marked,aboveSlot){
       const row=h('<div class="listitem"><div class="li-main"><div class="li-title">'+esc(x.type||'未分类')+'</div><div class="li-sub">'+esc(x.date)+' '+(x.time||'')+' · '+esc(x.minutes||0)+' 分钟</div></div><button class="btn" style="padding:4px 10px;font-size:12px;color:var(--danger);flex:none">删</button></div>');
       row.querySelector('button').onclick=async()=>{
         const y=await confirmBox('删除这条运动？',{danger:true,okText:'删除'});
-        if(y){await DB.del('exercises',x.id);Router.refresh();}
+        if(y){await DB.del('exercises',x.id);await syncExerciseRecord(item.id,x.date);Router.refresh();}
       };
       list.appendChild(row);
     }
@@ -1552,6 +1577,16 @@ async function computeFoodKinds(date,itemId){
   return set.size;
 }
 const MEAL_SLOTS=[['breakfast','早餐'],['lunch','午餐'],['dinner','晚餐'],['snack','加餐']];
+async function galleryDishTags(itemId){ // 图鉴条目的食材标签（与菜名标签共用历史）
+  const item=itemId?await DB.get('items',itemId):null;
+  const bucket=(item&&item.kind==='custom'?'c_'+item.id+'-':'')+'dish-gallery';
+  const arr=[];
+  for(const e of await DB.all('entries')){
+    if(e.bucket!==bucket)continue;
+    for(const t of (e.ing||[])){const k=(t||'').trim();if(k&&arr.indexOf(k)<0)arr.push(k);}
+  }
+  return arr;
+}
 async function topMealTags(limit,itemId){
   let meals=await DB.all('meals');
   if(itemId)meals=meals.filter(m=>m.itemId===itemId);
@@ -1562,8 +1597,11 @@ async function topMealTags(limit,itemId){
     stat[k].count++;
     if((m.date||'')>stat[k].last)stat[k].last=m.date;
   }
-  return Object.keys(stat).map(k=>({tag:k,count:stat[k].count,last:stat[k].last}))
-    .sort((a,b)=>b.count-a.count||b.last.localeCompare(a.last)).slice(0,limit);
+  const arr=Object.keys(stat).map(k=>({tag:k,count:stat[k].count,last:stat[k].last}))
+    .sort((a,b)=>b.count-a.count||b.last.localeCompare(a.last));
+  const gt=await galleryDishTags(itemId); // 图鉴标签并入历史（按使用次数排后）
+  for(const t of gt)if(!arr.some(x=>x.tag===t))arr.push({tag:t,count:0,last:''});
+  return arr.slice(0,limit);
 }
 async function allMealTags(itemId){
   let meals=await DB.all('meals');
@@ -1572,11 +1610,12 @@ async function allMealTags(itemId){
   for(const m of meals)for(const d of mealDishes(m))for(const t of (d.ing||[])){
     const k=(t||'').trim();if(k&&arr.indexOf(k)<0)arr.push(k);
   }
+  for(const t of await galleryDishTags(itemId))if(arr.indexOf(t)<0)arr.push(t);
   return arr;
 }
 function openQuickSew(item){ // 快速记录今日缝纫：文本追加到当天打卡记录，支持照片（≤3张）
   const date=todayKey();
-  const sheet=h('<div class="sheet"><h3>快速记录今日缝纫</h3>'
+  const sheet=h('<div class="sheet"><h3>快速记录今日</h3>'
     +'<div style="margin:10px 0"><textarea class="textarea" id="qa-text" rows="3" placeholder="今天做了什么…" style="min-height:64px"></textarea></div>'
     +'<div style="margin:10px 0"><div style="font-size:12.5px;color:var(--ink2);margin-bottom:4px">照片（最多 3 张）</div><div id="qa-pics"></div></div>'
     +'<div class="row"><button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
@@ -1598,12 +1637,18 @@ function openQuickSew(item){ // 快速记录今日缝纫：文本追加到当天
     }finally{qaSaving=false;}
   };
 }
-function openQuickEat(item){ // 快速记录今日饮食：选餐次+菜名（逗号分隔多道），并确保当天生成打卡记录
+function openQuickEat(item){ // 快速记录今日饮食：餐次+菜名+食材价格+市场价+食材标签（与编辑菜名字段一致），并确保当天生成打卡记录
   const date=todayKey();
+  const itemId=item.id;
   let slot='breakfast';
   const sheet=h('<div class="sheet"><h3>快速记录今日</h3>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">餐次</label><div id="qa-slots" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">菜名（可用逗号分隔多道菜）</label><input class="input" id="qa-name" placeholder="如 红烧肉，炒青菜"></div>'
+    +'<div style="display:flex;gap:8px;margin:10px 0"><div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">食材价格（元）</label><input type="number" class="input" id="qa-price" step="0.01" min="0" placeholder="实际花费"></div><div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">市场价（元）</label><input type="number" class="input" id="qa-market" step="0.01" min="0" placeholder="在外购买的价"></div></div>'
+    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">常用食材标签（点选添加）</label><div id="qa-hist" style="display:flex;flex-wrap:wrap;gap:4px"></div></div>'
+    +'<div style="margin:10px 0"><input class="input" id="qa-search" placeholder="输入首字搜索标签，回车直接添加"></div>'
+    +'<div id="qa-searchres" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:8px"></div>'
+    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">已选标签</label><div id="qa-sel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px"></div></div>'
     +'<div class="row"><button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
   const m=modal(sheet);
   const slotBox=sheet.querySelector('#qa-slots');
@@ -1616,6 +1661,50 @@ function openQuickEat(item){ // 快速记录今日饮食：选餐次+菜名（�
     }
   }
   drawSlots();
+  // 食材标签：与编辑菜名共用历史
+  const sel=[];
+  let histCache=[];
+  const histBox=sheet.querySelector('#qa-hist'),selBox=sheet.querySelector('#qa-sel'),resBox=sheet.querySelector('#qa-searchres'),searchInp=sheet.querySelector('#qa-search');
+  const chip=(label,onclick)=>{const c=h('<button type="button" class="tagchip"></button>');c.textContent=label;c.onclick=onclick;return c;};
+  function drawAll(){
+    selBox.innerHTML='';
+    if(!sel.length)selBox.appendChild(h('<span style="font-size:12px;color:var(--ink2)">未添加标签</span>'));
+    sel.forEach((t,i)=>{
+      const c=h('<button type="button" class="tagchip on"></button>');c.textContent=t+' ×';
+      c.onclick=()=>{sel.splice(i,1);drawAll();};
+      selBox.appendChild(c);
+    });
+    histBox.innerHTML='';
+    if(!histCache.length)histBox.appendChild(h('<span style="font-size:12px;color:var(--ink2)">暂无历史标签，直接在下方输入新建</span>'));
+    histCache.forEach(t=>{
+      if(sel.indexOf(t)>=0)return;
+      histBox.appendChild(chip(t,()=>{sel.push(t);drawAll();}));
+    });
+  }
+  function drawSearch(){
+    const q=searchInp.value.trim();
+    resBox.innerHTML='';
+    if(!q){resBox.style.display='none';return;}
+    resBox.style.display='flex';
+    allMealTags(itemId).then(tags=>{
+      const cands=tags.filter(t=>t.indexOf(q)===0&&sel.indexOf(t)<0).slice(0,8);
+      cands.forEach(t=>resBox.appendChild(chip(t,()=>{if(sel.indexOf(t)<0)sel.push(t);searchInp.value='';drawAll();drawSearch();})));
+      if(q&&sel.indexOf(q)<0&&tags.indexOf(q)<0){
+        resBox.appendChild(chip('＋ 新建「'+q+'」',()=>{sel.push(q);searchInp.value='';drawAll();drawSearch();}));
+      }
+    });
+  }
+  searchInp.addEventListener('input',drawSearch);
+  searchInp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){
+      e.preventDefault();
+      const q=searchInp.value.trim();
+      if(q&&sel.indexOf(q)<0)sel.push(q);
+      searchInp.value='';drawAll();drawSearch();
+    }
+  });
+  topMealTags(10,itemId).then(list=>{histCache=list.map(x=>x.tag);drawAll();});
+  drawAll();
   sheet.querySelector('[data-x="no"]').onclick=()=>closeModal(m);
   let qaSaving=false;
   sheet.querySelector('[data-x="ok"]').onclick=async()=>{
@@ -1623,12 +1712,14 @@ function openQuickEat(item){ // 快速记录今日饮食：选餐次+菜名（�
     try{
       const names=sheet.querySelector('#qa-name').value.split(/[,，、\n]/).map(x=>x.trim()).filter(Boolean);
       if(!names.length){toast('请填写菜名');return;}
-      const all=(await DB.byIndex('meals','date',date)).filter(x=>x.itemId===item.id);
+      const pv=parseFloat(sheet.querySelector('#qa-price').value);const mkv=parseFloat(sheet.querySelector('#qa-market').value);
+      const price=isNaN(pv)?null:pv;const market=isNaN(mkv)?null:mkv; // 价格仅记在第一道菜上（与编辑菜名一致）
+      const all=(await DB.byIndex('meals','date',date)).filter(x=>x.itemId===itemId);
       const ex=all.find(x=>x.slot===slot);
-      const dishes=(ex?mealDishes(ex):[]).concat(names.map(n=>({name:n,ing:[]})));
-      await DB.put('meals',{id:ex?ex.id:uid(),itemId:item.id,date,slot,dishes});
-      const r=await getRecord(item.id,date);
-      if(!r)await DB.put('records',{id:uid(),itemId:item.id,date,text:'',imageIds:[]});
+      const dishes=(ex?mealDishes(ex):[]).concat(names.map((n,k)=>({name:n,ing:[...sel],price:k===0?price:null,market:k===0?market:null})));
+      await DB.put('meals',{id:ex?ex.id:uid(),itemId,date,slot,dishes});
+      const r=await getRecord(itemId,date);
+      if(!r)await DB.put('records',{id:uid(),itemId,date,text:'',imageIds:[]});
       closeModal(m);toast('已记录');Router.refresh();
     }finally{qaSaving=false;}
   };
@@ -1816,7 +1907,7 @@ async function renderExerciseSection(body,date,itemId){
       const it=h('<div class="exitem"><span></span><button>删</button></div>');
       const hm=x.time?x.time+' · ':'';
       it.querySelector('span').textContent=hm+(x.type||'未分类')+' · '+(x.minutes||0)+' 分钟';
-      it.querySelector('button').onclick=async()=>{const y=await confirmBox('删除这条运动？',{danger:true,okText:'删除'});if(y){await DB.del('exercises',x.id);draw();}};
+      it.querySelector('button').onclick=async()=>{const y=await confirmBox('删除这条运动？',{danger:true,okText:'删除'});if(y){await DB.del('exercises',x.id);await syncExerciseRecord(itemId,x.date);draw();}};
       list.appendChild(it);
     }
   }
@@ -1825,6 +1916,7 @@ async function renderExerciseSection(body,date,itemId){
     if(!type){toast('请输入运动类型');return;}
     if(!m||m<1){toast('请输入分钟数');return;}
     await DB.put('exercises',{id:uid(),itemId,date,time:nowHM(),type,minutes:m});
+    await syncExerciseRecord(itemId,date);
     inpT.value='';inpM.value='';draw();
   };
   body.appendChild(wrap);await draw();
@@ -1887,14 +1979,14 @@ Pages.folder={
         if(op){
           ev.stopPropagation();
           if(op.dataset.op==='del'){const y=await confirmBox('删除「'+(e.title||'（无标题）')+'」？',{danger:true,okText:'删除'});if(y){if(e.imageIds)for(const id of e.imageIds)await DB.del('images',id);await DB.del('entries',e.id);Router.refresh();}}
-          else Router.go('entryEditor',{entryId:e.id});
+          else Router.go('entryEditor',{entryId:e.id,itemId:p.itemId});
           return;
         }
-        Router.go('entryEditor',{entryId:e.id});
+        Router.go('entryEditor',{entryId:e.id,itemId:p.itemId});
       };
       list.appendChild(en);
     }
-    el.querySelector('.fab').onclick=()=>Router.go('entryEditor',{bucket:p.bucket,name:p.name});
+    el.querySelector('.fab').onclick=()=>Router.go('entryEditor',{bucket:p.bucket,name:p.name,itemId:p.itemId});
     return el;
   }
 };
@@ -1902,18 +1994,67 @@ Pages.entryEditor={
   async render(p){
     const isNew=!p.entryId;
     const entry=isNew?{id:uid(),bucket:p.bucket,title:'',text:'',imageIds:[],createdAt:Date.now()}:await DB.get('entries',p.entryId);
-    const bucketName=p.name||(await (async()=>{const all=[['sew-inspiration','灵感收集'],['sew-gallery','缝纫图鉴'],['sew-tips','小 Tip'],['dish-gallery','图鉴'],['skill-new','新技能'],['skill-note','注意事项']];const f=all.find(a=>a[0]===entry.bucket);return f?f[1]:'';})());
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+(isNew?'新增':'编辑')+' · '+esc(bucketName)+'</h1></div><div class="editor"><div class="field"><label>标题</label><input class="input" placeholder="给这条起个名字"></div><div class="field"><label>内容</label><textarea class="textarea" placeholder="随便写点什么…"></textarea></div><div class="field"><label>图片（最多 3 张）</label><div></div></div><div class="btnrow"><button class="btn" data-x="back">取消</button><button class="btn primary" data-x="save">保存</button></div></div></div>');
+    const bucketName=p.name||(await (async()=>{const all=[['sew-inspiration','灵感收集'],['sew-gallery','图鉴'],['sew-tips','小 Tip'],['dish-gallery','图鉴'],['skill-new','新技能'],['skill-note','注意事项']];const f=all.find(a=>a[0]===entry.bucket);return f?f[1]:'';})());
+    const isGallery=(entry.bucket||p.bucket||'').indexOf('dish-gallery')>=0; // 饮食图鉴条目：内容→注意事项 + 食材标签
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+(isNew?'新增':'编辑')+' · '+esc(bucketName)+'</h1></div><div class="editor"><div class="field"><label>标题</label><input class="input" placeholder="给这条起个名字"></div><div class="field"><label>'+(isGallery?'注意事项':'内容')+'</label><textarea class="textarea" placeholder="'+(isGallery?'做法要点、注意事项…':'随便写点什么…')+'"></textarea></div>'+(isGallery?'<div class="field"><label>食材标签（点选添加，与添加菜名共用历史）</label><div id="en-hist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="en-search" placeholder="输入首字搜索标签，回车直接添加" style="margin-bottom:6px"><div id="en-searchres" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><div id="en-sel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px"></div></div>':'')+'<div class="field"><label>图片（最多 3 张）</label><div></div></div><div class="btnrow"><button class="btn" data-x="back">取消</button><button class="btn primary" data-x="save">保存</button></div></div></div>');
     const titleIn=el.querySelector('.input');titleIn.value=entry.title||'';
     const textIn=el.querySelector('textarea');textIn.value=entry.text||'';
-    const imgBox=el.querySelector('.editor>div:nth-of-type(3)');
+    const sel=(entry.ing||[]).filter(Boolean);
+    if(isGallery){ // 食材标签：历史与搜索（同编辑菜名逻辑，共用历史记录）
+      const itemId=p.itemId||null;
+      const histBox=el.querySelector('#en-hist'),selBox=el.querySelector('#en-sel'),resBox=el.querySelector('#en-searchres'),searchInp=el.querySelector('#en-search');
+      let histCache=[];
+      const chip=(label,onclick)=>{const c=h('<button type="button" class="tagchip"></button>');c.textContent=label;c.onclick=onclick;return c;};
+      function drawAll(){
+        selBox.innerHTML='';
+        if(!sel.length)selBox.appendChild(h('<span style="font-size:12px;color:var(--ink2)">未添加标签</span>'));
+        sel.forEach((t,i)=>{
+          const c=h('<button type="button" class="tagchip on"></button>');c.textContent=t+' ×';
+          c.onclick=()=>{sel.splice(i,1);drawAll();};
+          selBox.appendChild(c);
+        });
+        histBox.innerHTML='';
+        if(!histCache.length)histBox.appendChild(h('<span style="font-size:12px;color:var(--ink2)">暂无历史标签，直接在下方输入新建</span>'));
+        histCache.forEach(t=>{
+          if(sel.indexOf(t)>=0)return;
+          histBox.appendChild(chip(t,()=>{sel.push(t);drawAll();}));
+        });
+      }
+      function drawSearch(){
+        const q=searchInp.value.trim();
+        resBox.innerHTML='';
+        if(!q){resBox.style.display='none';return;}
+        resBox.style.display='flex';
+        allMealTags(itemId).then(tags=>{
+          const cands=tags.filter(t=>t.indexOf(q)===0&&sel.indexOf(t)<0).slice(0,8);
+          cands.forEach(t=>resBox.appendChild(chip(t,()=>{if(sel.indexOf(t)<0)sel.push(t);searchInp.value='';drawAll();drawSearch();})));
+          if(q&&sel.indexOf(q)<0&&tags.indexOf(q)<0){
+            resBox.appendChild(chip('＋ 新建「'+q+'」',()=>{sel.push(q);searchInp.value='';drawAll();drawSearch();}));
+          }
+        });
+      }
+      searchInp.addEventListener('input',drawSearch);
+      searchInp.addEventListener('keydown',e=>{
+        if(e.key==='Enter'){
+          e.preventDefault();
+          const q=searchInp.value.trim();
+          if(q&&sel.indexOf(q)<0)sel.push(q);
+          searchInp.value='';drawAll();drawSearch();
+        }
+      });
+      topMealTags(10,itemId).then(list=>{histCache=list.map(x=>x.tag);drawAll();});
+      drawAll();
+    }
+    const imgBox=el.querySelector('.editor>div:nth-of-type('+(isGallery?4:3)+')');
     Img.grid(imgBox,entry.imageIds,{max:3,onChange:async removed=>{if(removed)await DB.del('images',removed);}});
     el.querySelector('[data-x=save]').onclick=async()=>{
       entry.title=titleIn.value.trim();
       entry.text=textIn.value;
       if(!entry.title&&!entry.text&&!entry.imageIds.length){toast('至少写点什么');return;}
       entry.createdAt=entry.createdAt||Date.now();
-      await DB.put('entries',{id:entry.id,bucket:entry.bucket||p.bucket,title:entry.title,text:entry.text,imageIds:[...entry.imageIds],createdAt:entry.createdAt});
+      const out={id:entry.id,bucket:entry.bucket||p.bucket,title:entry.title,text:entry.text,imageIds:[...entry.imageIds],createdAt:entry.createdAt};
+      if(isGallery)out.ing=[...sel];
+      await DB.put('entries',out);
       toast('已保存');
       Router.back();
     };
@@ -2021,7 +2162,7 @@ async function parseZip(blob){
   return entries;
 }
 async function exportAll(){
-  const storeNames=['items','records','entries','meals','exercises','bodyMetrics','books','skills','inventory','groceries','images','settings'];
+  const storeNames=['items','records','entries','meals','exercises','bodyMetrics','books','skills','inventory','groceries','fridge','images','settings'];
   const entries=[];
   for(const n of storeNames){
     const all=await DB.all(n);
@@ -2048,7 +2189,7 @@ async function exportAll(){
 }
 async function importAll(blob,mode){
   const entries=await parseZip(blob);
-  const storeNames=['items','records','entries','meals','exercises','bodyMetrics','books','skills','inventory','groceries','images','settings'];
+  const storeNames=['items','records','entries','meals','exercises','bodyMetrics','books','skills','inventory','groceries','fridge','images','settings'];
   if(mode==='overwrite'){
     for(const n of storeNames)await DB.clear(n);
   }
@@ -2070,7 +2211,7 @@ async function importAll(blob,mode){
   }
 }
 async function clearAllDB(){
-  const storeNames=['items','records','entries','meals','exercises','bodyMetrics','books','skills','inventory','groceries','images','settings'];
+  const storeNames=['items','records','entries','meals','exercises','bodyMetrics','books','skills','inventory','groceries','fridge','images','settings'];
   for(const n of storeNames)await DB.clear(n);
 }
 
@@ -2613,8 +2754,17 @@ Pages.grocery={
         const unit=(parseFloat(x.total)||0)/(parseFloat(x.qty)||1);
         const priceStr=(x.price!==undefined&&x.price!==null&&x.price!=='')?'¥'+(+x.price).toFixed(2)+'/'+u:'¥'+unit.toFixed(2)+'/'+u;
         const qtyStr=(x.qty!==undefined&&x.qty!==null&&x.qty!=='')?x.qty+' '+u:'-';
-        const row=h('<div class="listitem"><div class="li-main"><div class="li-title">'+esc(x.name||'未命名食材')+'</div><div class="li-sub">'+esc(x.date||'')+' · 数量 '+esc(String(qtyStr))+' · 单价 '+priceStr+(x.note?' · '+esc(x.note):'')+'</div></div><button class="btn" style="padding:4px 10px;font-size:12px;color:var(--danger);flex:none">删</button></div>');
-        row.querySelector('button').onclick=async()=>{
+        const row=h('<div class="listitem"><div class="li-main"><div class="li-title">'+esc(x.name||'未命名食材')+'</div><div class="li-sub">'+esc(x.date||'')+' · 数量 '+esc(String(qtyStr))+' · 单价 '+priceStr+(x.note?' · '+esc(x.note):'')+'</div></div><button class="btn" data-op="fridge" style="padding:4px 10px;font-size:12px;color:var(--mist);flex:none">入冰箱</button><button class="btn" style="padding:4px 10px;font-size:12px;color:var(--danger);flex:none">删</button></div>');
+        row.querySelector('[data-op=fridge]').onclick=()=>{
+          // 选择放入冷藏或冷冻，带入食材名称
+          const s=h('<div class="sheet"><h3>「'+esc(x.name||'未命名食材')+'」放入</h3><div style="display:flex;flex-direction:column;gap:10px"><button class="btn" data-z="cold">🧊 冷藏</button><button class="btn" data-z="frozen">❄️ 冷冻</button><button class="btn" data-z="no">取消</button></div></div>');
+          const mm=modal(s);
+          s.querySelector('[data-z=no]').onclick=()=>closeModal(mm);
+          s.querySelectorAll('[data-z=cold],[data-z=frozen]').forEach(b=>{
+            b.onclick=()=>{closeModal(mm);openFridgeForm(itemId,b.dataset.z,null,{name:x.name||''},redraw);};
+          });
+        };
+        row.querySelector('button:not([data-op])').onclick=async()=>{
           const y=await confirmBox('删除「'+esc(x.name||'未命名食材')+'」这笔记录？',{danger:true,okText:'删除'});
           if(y){await DB.del('groceries',x.id);redraw();}
         };
@@ -2624,6 +2774,137 @@ Pages.grocery={
     await redraw();
     el.querySelector('[data-x=prev]').onclick=()=>{state.m--;if(state.m<0){state.m=11;state.y--;}redraw();};
     el.querySelector('[data-x=next]').onclick=()=>{state.m++;if(state.m>11){state.m=0;state.y++;}redraw();};
+    return el;
+  }
+};
+
+/* ===== J9b 小冰箱（固定饮食模块）：冷藏在上、冷冻在下，食材彩色标签 ===== */
+const FRIDGE_CATS=[['绿叶类',3],['瓜茄类',5],['根茎类',10],['菌菇类',4],['鸡蛋',45],['牛奶',7],['水果类',5]]; // 冷藏类别默认保质期（天）
+const FRIDGE_COLORS=['#A98467','#C97B7B','#7A93AC','#8FA68A','#C2A27C','#B08BB5','#7FA0A8','#B5835A','#8A9A7B','#C99A6B'];
+function fridgeColor(name){let s=0;for(const ch of String(name||''))s=(s*31+ch.charCodeAt(0))>>>0;return FRIDGE_COLORS[s%FRIDGE_COLORS.length];}
+function fmtFrac(v){ // 小数→分数显示：0.5→1/2、0.25→1/4、0.75→3/4
+  if(Math.abs(v-Math.round(v))<1e-9)return String(Math.round(v));
+  for(const d of [2,3,4,8]){const n=v*d;if(Math.abs(n-Math.round(n))<1e-9)return Math.round(n)+'/'+d;}
+  return String(+v.toFixed(2));
+}
+function parseFrac(s){ // '1/2'→0.5，支持普通数字
+  s=String(s||'').trim();
+  if(/^\d+\/\d+$/.test(s)){const p=s.split('/');return (+p[1])?(+p[0])/(+p[1]):NaN;}
+  const v=parseFloat(s);return isNaN(v)?NaN:v;
+}
+function fridgeQtyStr(r){return r.qtyUnit==='份'?(fmtFrac(r.qty||0)+' 份'):((r.qty||0)+(r.qtyUnit==='g'?'g':'个'));}
+function fridgeEffStatus(r){ // 待消耗且已过保质期 → 自动显示已过期
+  if((r.status||'待消耗')==='待消耗'&&r.expireDate&&r.expireDate<todayKey())return '已过期';
+  return r.status||'待消耗';
+}
+async function openFridgeForm(itemId,zone,existing,prefill,onSaved){ // 新增/编辑食材：保质期、数量（个/g/几分之一）、搭配、状态
+  prefill=prefill||{};
+  const isNew=!existing;
+  const rec=existing||{id:uid(),itemId,zone,name:prefill.name||'',cat:'',addedDate:todayKey(),shelfDays:3,qty:1,qtyUnit:'个',pair:'',status:'待消耗'};
+  zone=rec.zone||zone||'cold';
+  const dishes=(await DB.all('entries')).filter(e=>e.bucket==='dish-gallery'&&e.title).map(e=>e.title); // 图鉴菜品供搭配选择
+  const sheet=h('<div class="sheet"><h3>'+(isNew?'添加食材':'编辑食材')+'</h3>'
+    +'<div style="display:flex;gap:8px;margin:10px 0"><button type="button" class="tagchip" data-z="cold" style="padding:6px 14px">🧊 冷藏</button><button type="button" class="tagchip" data-z="frozen" style="padding:6px 14px">❄️ 冷冻</button></div>'
+    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">食材名称</label><input class="input" id="fd-name" placeholder="如 鸡蛋"></div>'
+    +'<div id="fd-cat-box" style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">类别（决定冷藏默认保质期）</label><select class="input" id="fd-cat"></select></div>'
+    +'<div style="display:flex;gap:10px;margin:10px 0"><div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">入库日期</label><input type="date" class="input" id="fd-added"></div>'
+    +'<div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">保质期（天）</label><input type="number" min="1" class="input" id="fd-shelf"></div></div>'
+    +'<div style="display:flex;gap:10px;align-items:flex-end;margin:10px 0"><div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">数量</label><div style="display:flex;gap:6px;align-items:center"><button type="button" class="btn" id="fd-minus" style="padding:6px 12px">−</button><input class="input" id="fd-qty" style="flex:1;text-align:center" inputmode="decimal"><button type="button" class="btn" id="fd-plus" style="padding:6px 12px">＋</button></div></div>'
+    +'<div style="flex:none;width:80px"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">单位</label><select class="input" id="fd-unit"><option value="个">个</option><option value="g">g</option><option value="份">几分之一</option></select></div></div>'
+    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">搭配</label><div style="display:flex;gap:8px"><select class="input" id="fd-pair-sel" style="flex:1"></select></div><input class="input" id="fd-pair" placeholder="自定义搭配（选了菜品会自动填入，可改）" style="margin-top:6px"></div>'
+    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">当前状态</label><select class="input" id="fd-status"><option>待消耗</option><option>已用完</option><option>已过期</option><option>已损坏</option></select></div>'
+    +(isNew?'':'<div style="font-size:12px;color:var(--ink2)">到期日：'+esc(rec.expireDate||'')+' · 现状态：'+esc(fridgeEffStatus(rec))+'</div>')
+    +'<div class="row">'+(isNew?'':'<button class="btn danger" id="fd-del" style="margin-right:auto">删除</button>')+'<button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
+  const m=modal(sheet);
+  let curZone=zone;
+  const zoneBtns=sheet.querySelectorAll('[data-z]');
+  function drawZone(){
+    zoneBtns.forEach(b=>b.classList.toggle('on',b.dataset.z===curZone));
+    // 冷藏显示类别下拉（含默认天数），冷冻只有自定义
+    const catSel=sheet.querySelector('#fd-cat');
+    if(curZone==='cold'){
+      catSel.innerHTML='<option value="">自定义</option>'+FRIDGE_CATS.map(c=>'<option value="'+c[0]+'" data-days="'+c[1]+'">'+c[0]+'（'+c[1]+'天）</option>').join('');
+      sheet.querySelector('#fd-cat-box').style.display='';
+    }else{
+      sheet.querySelector('#fd-cat-box').style.display='none';
+    }
+  }
+  sheet.querySelector('#fd-name').value=rec.name;
+  sheet.querySelector('#fd-added').value=rec.addedDate||todayKey();
+  sheet.querySelector('#fd-shelf').value=rec.shelfDays||3;
+  sheet.querySelector('#fd-unit').value=rec.qtyUnit||'个';
+  sheet.querySelector('#fd-qty').value=rec.qtyUnit==='份'?fmtFrac(rec.qty||0):String(rec.qty!=null?rec.qty:1);
+  sheet.querySelector('#fd-pair').value=rec.pair||'';
+  sheet.querySelector('#fd-status').value=rec.status||'待消耗';
+  drawZone();
+  if(rec.cat){const cs=sheet.querySelector('#fd-cat');if(curZone==='cold'&&[...cs.options].some(o=>o.value===rec.cat))cs.value=rec.cat;}
+  const qtyIn=sheet.querySelector('#fd-qty'),unitSel=sheet.querySelector('#fd-unit');
+  function qtyStep(){return unitSel.value==='个'?1:(unitSel.value==='g'?50:0.5);}
+  function showQty(v){qtyIn.value=unitSel.value==='份'?fmtFrac(v):String(Math.round(v*100)/100);}
+  function curQty(){const v=parseFrac(qtyIn.value);return isNaN(v)?0:v;}
+  sheet.querySelector('#fd-minus').onclick=()=>showQty(Math.max(0,curQty()-qtyStep()));
+  sheet.querySelector('#fd-plus').onclick=()=>showQty(curQty()+qtyStep());
+  unitSel.onchange=()=>{showQty(curQty());};
+  sheet.querySelector('#fd-cat').onchange=e=>{
+    const opt=e.target.selectedOptions[0];
+    if(opt&&opt.dataset.days)sheet.querySelector('#fd-shelf').value=opt.dataset.days;
+  };
+  const pairSel=sheet.querySelector('#fd-pair-sel');
+  pairSel.innerHTML='<option value="">选择图鉴菜品…</option><option value="__custom">✎ 自定义</option>'+dishes.map(d=>'<option>'+esc(d)+'</option>').join('');
+  pairSel.onchange=()=>{if(pairSel.value&&pairSel.value!=='__custom')sheet.querySelector('#fd-pair').value=pairSel.value;};
+  zoneBtns.forEach(b=>b.onclick=()=>{curZone=b.dataset.z;drawZone();});
+  sheet.querySelector('[data-x=no]').onclick=()=>closeModal(m);
+  const delBtn=sheet.querySelector('#fd-del');
+  if(delBtn)delBtn.onclick=async()=>{
+    const y=await confirmBox('删除食材「'+esc(rec.name||'未命名')+'」？',{danger:true,okText:'删除'});
+    if(y){await DB.del('fridge',rec.id);closeModal(m);toast('已删除');onSaved&&onSaved();}
+  };
+  sheet.querySelector('[data-x=ok]').onclick=async()=>{
+    const name=sheet.querySelector('#fd-name').value.trim();
+    if(!name){toast('请填写食材名称');return;}
+    const added=sheet.querySelector('#fd-added').value||todayKey();
+    const shelf=parseInt(sheet.querySelector('#fd-shelf').value,10);
+    if(!shelf||shelf<1){toast('请填写保质期天数');return;}
+    const out={id:rec.id,itemId,zone:curZone,name,cat:curZone==='cold'?sheet.querySelector('#fd-cat').value:'',
+      addedDate:added,shelfDays:shelf,expireDate:addDays(added,shelf),
+      qty:Math.max(0,curQty()),qtyUnit:unitSel.value,
+      pair:sheet.querySelector('#fd-pair').value.trim(),status:sheet.querySelector('#fd-status').value};
+    await DB.put('fridge',out);
+    closeModal(m);
+    toast(isNew?'已放入'+(curZone==='cold'?'冷藏':'冷冻'):'已保存');
+    onSaved&&onSaved();
+  };
+}
+Pages.fridge={
+  async render(p){
+    const item=p&&p.itemId?await DB.get('items',p.itemId):null;
+    const itemId=item?item.id:null;
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">小冰箱</h1><button class="iconbtn" data-x="add">＋</button></div><div id="fd-body" style="padding:4px 16px 30px"></div></div>');
+    const body=el.querySelector('#fd-body');
+    async function drawZoneBox(zone,label,ic){
+      let list=(await DB.byIndex('fridge','itemId',itemId)).filter(r=>(r.zone||'cold')===zone);
+      list=list.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+      const box=h('<div class="cal" style="margin:0 0 14px"><div class="cal-head"><div class="cal-title">'+ic+' '+label+'</div><button class="btn" style="padding:5px 12px;font-size:12.5px">添加</button></div><div class="fd-tags" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px"></div></div>');
+      box.querySelector('.btn').onclick=()=>openFridgeForm(itemId,zone,null,{},draw);
+      const tags=box.querySelector('.fd-tags');
+      if(!list.length)tags.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">暂无食材</div>'));
+      for(const r of list){
+        const st=fridgeEffStatus(r);
+        const sub=fridgeQtyStr(r)+(r.pair?(' · 搭配 '+r.pair):'')+(st!=='待消耗'?(' · '+st):'');
+        const tag=h('<button type="button" style="max-width:100%;padding:6px 12px;border-radius:999px;color:#fff;text-align:left;box-shadow:var(--shadow)"><span style="font-weight:700">'+esc(r.name||'未命名')+'</span> <span style="font-size:11.5px;opacity:.9">'+esc(sub)+'</span></button>');
+        tag.style.background=fridgeColor(r.name);
+        tag.onclick=()=>openFridgeForm(itemId,zone,r,{},draw);
+        tags.appendChild(tag);
+      }
+      body.appendChild(box);
+    }
+    async function draw(){
+      body.innerHTML='';
+      await drawZoneBox('cold','冷藏','🧊');
+      await drawZoneBox('frozen','冷冻','❄️');
+    }
+    el.querySelector('[data-x=add]').onclick=()=>openFridgeForm(itemId,'cold',null,{},draw);
+    await draw();
     return el;
   }
 };
@@ -2690,7 +2971,7 @@ Pages.readShelf={
     const shelfTitle=item&&item.kind==='custom'?('我的'+item.name):'我的书架';
     let tab='reading';
     let shelfTag='全部';
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(shelfTitle)+'</h1><button class="iconbtn plain" id="shelf-mng">管理</button></div><div style="padding:0 16px 8px"><div class="seg" id="shelf-tabs"><button data-t="reading" class="on">在读</button><button data-t="read">已看</button><button data-t="want">想看</button></div></div><div id="shelf-tags" style="padding:0 16px 10px;display:none;gap:8px;flex-wrap:wrap"></div><div class="cal" id="read-timer" style="margin:0 16px 12px"><div class="cal-head"><div class="cal-title">今日阅读</div><div id="rt-total" style="font-size:13px;color:var(--ink2)"></div></div><div id="rt-list"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="rt-start">开始计时</button><button class="btn" id="rt-add">补录时长</button></div></div><div class="shelf" id="shelf"></div></div>');
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(shelfTitle)+'</h1><button class="iconbtn plain" id="shelf-mng">管理</button></div><div style="padding:0 16px 8px"><div class="seg" id="shelf-tabs"><button data-t="reading" class="on">在读</button><button data-t="read">已看</button><button data-t="want">想看</button></div></div><div id="shelf-tags" style="padding:0 16px 10px;display:none;gap:8px;flex-wrap:wrap"></div>'+(item&&item.kind==='custom'?'':'<div class="cal" id="read-timer" style="margin:0 16px 12px"><div class="cal-head"><div class="cal-title">今日阅读</div><div id="rt-total" style="font-size:13px;color:var(--ink2)"></div></div><div id="rt-list"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="rt-start">开始计时</button><button class="btn" id="rt-add">补录时长</button></div></div>')+'<div class="shelf" id="shelf"></div></div>');
     const shelf=el.querySelector('#shelf');
     const tabs=el.querySelector('#shelf-tabs');
     let shelfManage=false,suppressClick=false;
@@ -2740,8 +3021,9 @@ Pages.readShelf={
       tabs.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
       redraw();
     });
-    /* ===== 今日阅读计时打卡 ===== */
+    /* ===== 今日阅读计时打卡（仅固定书架） ===== */
     const rtCard=el.querySelector('#read-timer');
+    if(rtCard){
     let rtStart=null,rtTick=null;
     function rtFmt(sec){return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');}
     async function saveRead(mins,src){
@@ -2788,11 +3070,12 @@ Pages.readShelf={
       saveRead(Math.min(n,1440),'补录');
     };
     rtRedraw();
+    }
     async function redraw(){
       shelf.innerHTML='';
       if(shelfManage)shelf.appendChild(h('<div style="grid-column:1/-1;font-size:12.5px;color:var(--ink2);padding:2px 2px 0">长按拖动卡片调整顺序，点 ✕ 隐藏</div>'));
-      // 今日阅读计时卡片仅在「在读」tab 显示
-      rtCard.style.display=tab==='reading'?'':'none';
+      // 今日阅读计时卡片仅在「在读」tab 显示（自定义模块无此卡片）
+      if(rtCard)rtCard.style.display=tab==='reading'?'':'none';
       let allBooks=await DB.all('books');
       if(itemId)allBooks=allBooks.filter(b=>b.itemId===itemId);
       // 排序：order 优先（管理态长按拖拽写入），未设置的按创建时间倒序；隐藏书不在书架显示
