@@ -1973,34 +1973,34 @@ Pages.folder={
       const en=h('<div class="ent"><div class="thumb"></div><div class="ebody"><div class="etitle"></div><div class="etext"></div><div class="eop"><button data-op="edit">编辑</button><button data-op="del" class="del">删除</button></div></div></div>');
       en.querySelector('.etitle').textContent=e.title||'（无标题）';
       en.querySelector('.etext').textContent=(e.text||'').slice(0,60);
-      if(isGallery){ // 待办格式：前面带小方格，点击勾选划线保留，再点取消
-        en.querySelector('.etext').style.display='none';
-        const todos=(e.todos&&e.todos.length?e.todos:(e.text||'').split('\n')).map(x=>typeof x==='string'?{t:x.trim(),done:false}:{t:(x.t||'').trim(),done:!!x.done}).filter(x=>x.t);
-        const tbox=h('<div style="margin-top:4px;display:flex;flex-direction:column;gap:5px"></div>');
-        todos.forEach(td=>{
-          const row=h('<div style="display:flex;align-items:flex-start;gap:8px"><button type="button" class="td-box" style="flex:none;width:16px;height:16px;border:2px solid var(--line);border-radius:4px;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;color:#fff"></button><span style="flex:1;min-width:0;font-size:13.5px;line-height:1.5;word-break:break-word"></span></div>');
-          const box=row.querySelector('.td-box');
-          box.style.background=td.done?'var(--ok)':'transparent';
-          box.textContent=td.done?'✓':'';
-          const sp=row.querySelector('span');
-          sp.textContent=td.t;
-          if(td.done){sp.style.textDecoration='line-through';sp.style.color='var(--ink2)';}
-          box.onclick=async ev=>{
-            ev.stopPropagation();
-            td.done=!td.done;
-            e.todos=todos;
-            await DB.put('entries',e);
-            box.style.background=td.done?'var(--ok)':'transparent';
-            box.textContent=td.done?'✓':'';
-            sp.style.textDecoration=td.done?'line-through':'';
-            sp.style.color=td.done?'var(--ink2)':'';
-          };
-          tbox.appendChild(row);
-        });
-        en.querySelector('.ebody').insertBefore(tbox,en.querySelector('.eop'));
+      if(isGallery){ // 待做：每条记录即一条待办，标题前小方格，勾选划线保留，再点取消
+        if(e.todos&&e.todos.length){ // 旧版多条待办数据迁移：合并回注意事项文本
+          const extra=e.todos.map(x=>(x.t||'').trim()).filter(Boolean).join('\n');
+          if(extra)e.text=(e.text?e.text+'\n':'')+extra;
+          delete e.todos;
+          await DB.put('entries',e);
+        }
+        en.innerHTML='<div class="ebody"><div style="display:flex;align-items:flex-start;gap:8px"><button type="button" class="td-box" style="flex:none;width:18px;height:18px;border:2px solid var(--line);border-radius:5px;margin-top:3px;display:flex;align-items:center;justify-content:center;font-size:12px;line-height:1;color:#fff"></button><div class="etitle" style="flex:1;min-width:0;word-break:break-word"></div></div><div class="eop"><button data-op="edit">编辑</button><button data-op="del" class="del">删除</button></div></div>';
+        const ttl=en.querySelector('.etitle');
+        ttl.textContent=e.title||'（无标题）';
+        const bx=en.querySelector('.td-box');
+        function drawTodo(){
+          bx.style.background=e.done?'var(--ok)':'transparent';
+          bx.textContent=e.done?'✓':'';
+          ttl.style.textDecoration=e.done?'line-through':'';
+          ttl.style.color=e.done?'var(--ink2)':'';
+        }
+        drawTodo();
+        bx.onclick=async ev=>{
+          ev.stopPropagation();
+          e.done=!e.done;
+          await DB.put('entries',e);
+          drawTodo();
+        };
+      }else{
+        const thumb=en.querySelector('.thumb');
+        if(e.imageIds&&e.imageIds[0]){const im=h('<img alt="">');Img.attach(im,e.imageIds[0]);thumb.appendChild(im);}else thumb.textContent='📝';
       }
-      const thumb=en.querySelector('.thumb');
-      if(e.imageIds&&e.imageIds[0]){const im=h('<img alt="">');Img.attach(im,e.imageIds[0]);thumb.appendChild(im);}else thumb.textContent='📝';
       en.onclick=async ev=>{
         const op=ev.target.closest('[data-op]');
         if(op){
@@ -2023,16 +2023,23 @@ Pages.entryEditor={
     const entry=isNew?{id:uid(),bucket:p.bucket,title:'',text:'',imageIds:[],createdAt:Date.now()}:await DB.get('entries',p.entryId);
     const bucketName=p.name||(await (async()=>{const all=[['sew-inspiration','灵感收集'],['sew-gallery','图鉴'],['sew-tips','小 Tip'],['dish-gallery','待做'],['skill-new','新技能'],['skill-note','注意事项']];const f=all.find(a=>a[0]===entry.bucket);return f?f[1]:'';})());
     const isGallery=(entry.bucket||p.bucket||'').indexOf('dish-gallery')>=0; // 饮食待做条目：待办格式 + 食材标签
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+(isNew?'新增':'编辑')+' · '+esc(bucketName)+'</h1></div><div class="editor"><div class="field"><label>标题</label><input class="input" placeholder="给这条起个名字"></div>'+(isGallery
-      ?'<div class="field"><label>待办（前面带小方格，回车添加，可勾选完成）</label><div id="en-todos" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div><input class="input" id="en-todo-inp" placeholder="输入待办事项，回车添加"></div>'
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+(isNew?'新增':'编辑')+' · '+esc(bucketName)+'</h1></div><div class="editor"><div class="field"><label>'+(isGallery?'待办事项（标题）':'标题')+'</label><input class="input" placeholder="'+(isGallery?'要做的一道菜/一件事':'给这条起个名字')+'"></div>'+(isGallery
+      ?'<div class="field"><label>注意事项</label><textarea class="textarea" id="en-note" placeholder="做法要点、注意事项…"></textarea></div>'
       :'<div class="field"><label>内容</label><textarea class="textarea" placeholder="随便写点什么…"></textarea></div><div class="field"><label>图片（最多 3 张）</label><div></div></div>')
       +'<div class="field"><label>食材标签（点选添加，与添加菜名共用历史）</label><div id="en-hist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="en-search" placeholder="输入首字搜索标签，回车直接添加" style="margin-bottom:6px"><div id="en-searchres" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><div id="en-sel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px"></div></div><div class="btnrow"><button class="btn" data-x="back">取消</button><button class="btn primary" data-x="save">保存</button></div></div></div>');
     const titleIn=el.querySelector('.input');titleIn.value=entry.title||'';
-    let todos=[]; // 待做条目：待办格式（旧文本按行迁移）
-    if(isGallery){
-      todos=(entry.todos&&entry.todos.length?entry.todos:(entry.text||'').split('\n')).map(x=>typeof x==='string'?{t:x.trim(),done:false}:{t:(x.t||'').trim(),done:!!x.done}).filter(x=>x.t);
-    }
     const textIn=el.querySelector('textarea');if(textIn)textIn.value=entry.text||'';
+    if(isGallery){ // 旧版多条待办数据迁移：合并回注意事项文本
+      if(entry.todos&&entry.todos.length){
+        const extra=entry.todos.map(x=>(x.t||'').trim()).filter(Boolean).join('\n');
+        if(extra)entry.text=(entry.text?entry.text+'\n':'')+extra;
+        delete entry.todos;
+      }
+      // 注意事项文本框高度随内容自适应，不出现滚动条
+      const autoGrow=()=>{textIn.style.height='auto';textIn.style.height=textIn.scrollHeight+'px';};
+      textIn.addEventListener('input',autoGrow);
+      setTimeout(autoGrow,0);
+    }
     const sel=(entry.ing||[]).filter(Boolean);
     if(isGallery){ // 食材标签：历史与搜索（同编辑菜名逻辑，共用历史记录）
       const itemId=p.itemId||null;
@@ -2078,34 +2085,6 @@ Pages.entryEditor={
       });
       topMealTags(10,itemId).then(list=>{histCache=list.map(x=>x.tag);drawAll();});
       drawAll();
-      // 待办编辑：小方格勾选（划线保留），回车添加，× 删除；列表高度随条目数自适应
-      const todoBox=el.querySelector('#en-todos'),todoInp=el.querySelector('#en-todo-inp');
-      function drawTodos(){
-        todoBox.innerHTML='';
-        if(!todos.length)todoBox.appendChild(h('<span style="font-size:12px;color:var(--ink2)">暂无待办，在下方输入添加</span>'));
-        todos.forEach((td,i)=>{
-          const row=h('<div style="display:flex;align-items:flex-start;gap:8px"><button type="button" class="td-box" style="flex:none;width:18px;height:18px;border:2px solid var(--line);border-radius:5px;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:12px;line-height:1;color:#fff"></button><span style="flex:1;min-width:0;font-size:14px;line-height:1.5;word-break:break-word"></span><button type="button" class="td-x" style="flex:none;color:var(--ink2);font-size:14px;padding:0 3px">×</button></div>');
-          const box=row.querySelector('.td-box');
-          box.style.background=td.done?'var(--ok)':'transparent';
-          box.textContent=td.done?'✓':'';
-          const sp=row.querySelector('span');
-          sp.textContent=td.t;
-          if(td.done){sp.style.textDecoration='line-through';sp.style.color='var(--ink2)';}
-          box.onclick=()=>{td.done=!td.done;drawTodos();};
-          row.querySelector('.td-x').onclick=()=>{todos.splice(i,1);drawTodos();};
-          todoBox.appendChild(row);
-        });
-      }
-      todoInp.addEventListener('keydown',e=>{
-        if(e.key==='Enter'){
-          e.preventDefault();
-          const v=todoInp.value.trim();
-          if(!v)return;
-          todos.push({t:v,done:false});
-          todoInp.value='';drawTodos();
-        }
-      });
-      drawTodos();
     }
     const imgBox=el.querySelector('.editor .field:nth-of-type(3)>div');
     if(!isGallery)Img.grid(imgBox,entry.imageIds,{max:3,onChange:async removed=>{if(removed)await DB.del('images',removed);}});
@@ -2113,13 +2092,13 @@ Pages.entryEditor={
       entry.title=titleIn.value.trim();
       if(!isGallery)entry.text=textIn.value;
       if(isGallery){
-        entry.todos=todos;
-        entry.text=todos.map(x=>x.t).join('\n'); // 兼容旧读取逻辑的纯文本
+        entry.text=textIn.value; // 注意事项：普通文本
+        delete entry.todos;
       }
-      if(!entry.title&&!(entry.todos||[]).length&&!(entry.text||'')&&!(entry.imageIds||[]).length){toast('至少写点什么');return;}
+      if(!entry.title&&!(entry.text||'')&&!(entry.imageIds||[]).length){toast('至少写点什么');return;}
       entry.createdAt=entry.createdAt||Date.now();
-      const out={id:entry.id,bucket:entry.bucket||p.bucket,title:entry.title,text:entry.text,todos:entry.todos,imageIds:[...(entry.imageIds||[])],createdAt:entry.createdAt};
-      if(isGallery)out.ing=[...sel];
+      const out={id:entry.id,bucket:entry.bucket||p.bucket,title:entry.title,text:entry.text,imageIds:[...(entry.imageIds||[])],createdAt:entry.createdAt};
+      if(isGallery){out.ing=[...sel];out.done=entry.done||false;} // 待做：标题即待办，done 记录勾选状态
       await DB.put('entries',out);
       toast('已保存');
       Router.back();
