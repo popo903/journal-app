@@ -897,7 +897,7 @@ function bucketDisplayName(bucket,byId){ // 由 bucket 推导文件夹显示名
   const nm=owner?owner.name:'';
   if(b==='sew-inspiration'||b.endsWith('-sew-inspiration'))return '灵感收集';
   if(b==='sew-tips'||b.endsWith('-sew-tips')||b==='eat-tips'||b.endsWith('-eat-tips'))return '小 Tip';
-  if(b==='dish-gallery'||b.endsWith('-dish-gallery'))return nm?(nm+'图鉴'):'图鉴';
+  if(b==='dish-gallery'||b.endsWith('-dish-gallery'))return nm?(nm+'待做'):'待做';
   return '条目';
 }
 async function globalSearch(q){
@@ -1371,11 +1371,11 @@ async function renderSpec(host,item,topSlot,marked,aboveSlot){
     // 功能入口 chips：文案按模块名生成；长按可隐藏，行尾「＋」恢复
     const feats=[
       {k:'weekStat',lab:'本周统计',go:()=>Router.go('weekStat',{itemId:item.id})},
-      {k:'gallery',lab:'图鉴',go:()=>Router.go('folder',{bucket:bp+'dish-gallery',name:'图鉴',itemId:item.id})},
+      {k:'gallery',lab:'待做',go:()=>Router.go('folder',{bucket:bp+'dish-gallery',name:'待做',itemId:item.id})},
       {k:'tips',lab:'小 Tip',go:()=>Router.go('folder',{bucket:bp+'eat-tips',name:'小 Tip'})},
       {k:'grocery',lab:'采购记录',go:()=>Router.go('grocery',{itemId:item.id})}
     ];
-    if(item.kind!=='custom')feats.push({k:'fridge',lab:'小冰箱',go:()=>Router.go('fridge',{itemId:item.id})}); // 小冰箱仅固定饮食模块生效
+    if(item.kind!=='custom')feats.push({k:'fridge',lab:'储藏室',go:()=>Router.go('fridge',{itemId:item.id})}); // 储藏室仅固定饮食模块生效
     const dis=item.disabledFeats||[];
     const row=h('<div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 16px 12px"></div>');
     for(const f of feats){
@@ -1965,6 +1965,7 @@ Pages.day={
 Pages.folder={
   async render(p){
     const entries=(await DB.byIndex('entries','bucket',p.bucket)).sort((a,b)=>b.createdAt-a.createdAt);
+    const isGallery=(p.bucket||'').indexOf('dish-gallery')>=0; // 饮食待做：卡片内显示待办列表，小方格可勾选
     const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(p.name)+'</h1></div><div class="entlist"></div><button class="fab" title="新增">＋</button></div>');
     const list=el.querySelector('.entlist');
     if(!entries.length)list.appendChild(h('<div class="empty" style="padding-top:40px">还没有条目，点右下角 ＋ 添加</div>'));
@@ -1972,6 +1973,32 @@ Pages.folder={
       const en=h('<div class="ent"><div class="thumb"></div><div class="ebody"><div class="etitle"></div><div class="etext"></div><div class="eop"><button data-op="edit">编辑</button><button data-op="del" class="del">删除</button></div></div></div>');
       en.querySelector('.etitle').textContent=e.title||'（无标题）';
       en.querySelector('.etext').textContent=(e.text||'').slice(0,60);
+      if(isGallery){ // 待办格式：前面带小方格，点击勾选划线保留，再点取消
+        en.querySelector('.etext').style.display='none';
+        const todos=(e.todos&&e.todos.length?e.todos:(e.text||'').split('\n')).map(x=>typeof x==='string'?{t:x.trim(),done:false}:{t:(x.t||'').trim(),done:!!x.done}).filter(x=>x.t);
+        const tbox=h('<div style="margin-top:4px;display:flex;flex-direction:column;gap:5px"></div>');
+        todos.forEach(td=>{
+          const row=h('<div style="display:flex;align-items:flex-start;gap:8px"><button type="button" class="td-box" style="flex:none;width:16px;height:16px;border:2px solid var(--line);border-radius:4px;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;color:#fff"></button><span style="flex:1;min-width:0;font-size:13.5px;line-height:1.5;word-break:break-word"></span></div>');
+          const box=row.querySelector('.td-box');
+          box.style.background=td.done?'var(--ok)':'transparent';
+          box.textContent=td.done?'✓':'';
+          const sp=row.querySelector('span');
+          sp.textContent=td.t;
+          if(td.done){sp.style.textDecoration='line-through';sp.style.color='var(--ink2)';}
+          box.onclick=async ev=>{
+            ev.stopPropagation();
+            td.done=!td.done;
+            e.todos=todos;
+            await DB.put('entries',e);
+            box.style.background=td.done?'var(--ok)':'transparent';
+            box.textContent=td.done?'✓':'';
+            sp.style.textDecoration=td.done?'line-through':'';
+            sp.style.color=td.done?'var(--ink2)':'';
+          };
+          tbox.appendChild(row);
+        });
+        en.querySelector('.ebody').insertBefore(tbox,en.querySelector('.eop'));
+      }
       const thumb=en.querySelector('.thumb');
       if(e.imageIds&&e.imageIds[0]){const im=h('<img alt="">');Img.attach(im,e.imageIds[0]);thumb.appendChild(im);}else thumb.textContent='📝';
       en.onclick=async ev=>{
@@ -1994,11 +2021,18 @@ Pages.entryEditor={
   async render(p){
     const isNew=!p.entryId;
     const entry=isNew?{id:uid(),bucket:p.bucket,title:'',text:'',imageIds:[],createdAt:Date.now()}:await DB.get('entries',p.entryId);
-    const bucketName=p.name||(await (async()=>{const all=[['sew-inspiration','灵感收集'],['sew-gallery','图鉴'],['sew-tips','小 Tip'],['dish-gallery','图鉴'],['skill-new','新技能'],['skill-note','注意事项']];const f=all.find(a=>a[0]===entry.bucket);return f?f[1]:'';})());
-    const isGallery=(entry.bucket||p.bucket||'').indexOf('dish-gallery')>=0; // 饮食图鉴条目：内容→注意事项 + 食材标签
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+(isNew?'新增':'编辑')+' · '+esc(bucketName)+'</h1></div><div class="editor"><div class="field"><label>标题</label><input class="input" placeholder="给这条起个名字"></div><div class="field"><label>'+(isGallery?'注意事项':'内容')+'</label><textarea class="textarea" placeholder="'+(isGallery?'做法要点、注意事项…':'随便写点什么…')+'"></textarea></div>'+(isGallery?'<div class="field"><label>食材标签（点选添加，与添加菜名共用历史）</label><div id="en-hist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="en-search" placeholder="输入首字搜索标签，回车直接添加" style="margin-bottom:6px"><div id="en-searchres" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><div id="en-sel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px"></div></div>':'')+'<div class="field"><label>图片（最多 3 张）</label><div></div></div><div class="btnrow"><button class="btn" data-x="back">取消</button><button class="btn primary" data-x="save">保存</button></div></div></div>');
+    const bucketName=p.name||(await (async()=>{const all=[['sew-inspiration','灵感收集'],['sew-gallery','图鉴'],['sew-tips','小 Tip'],['dish-gallery','待做'],['skill-new','新技能'],['skill-note','注意事项']];const f=all.find(a=>a[0]===entry.bucket);return f?f[1]:'';})());
+    const isGallery=(entry.bucket||p.bucket||'').indexOf('dish-gallery')>=0; // 饮食待做条目：待办格式 + 食材标签
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+(isNew?'新增':'编辑')+' · '+esc(bucketName)+'</h1></div><div class="editor"><div class="field"><label>标题</label><input class="input" placeholder="给这条起个名字"></div>'+(isGallery
+      ?'<div class="field"><label>待办（前面带小方格，回车添加，可勾选完成）</label><div id="en-todos" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div><input class="input" id="en-todo-inp" placeholder="输入待办事项，回车添加"></div>'
+      :'<div class="field"><label>内容</label><textarea class="textarea" placeholder="随便写点什么…"></textarea></div><div class="field"><label>图片（最多 3 张）</label><div></div></div>')
+      +'<div class="field"><label>食材标签（点选添加，与添加菜名共用历史）</label><div id="en-hist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="en-search" placeholder="输入首字搜索标签，回车直接添加" style="margin-bottom:6px"><div id="en-searchres" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><div id="en-sel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px"></div></div><div class="btnrow"><button class="btn" data-x="back">取消</button><button class="btn primary" data-x="save">保存</button></div></div></div>');
     const titleIn=el.querySelector('.input');titleIn.value=entry.title||'';
-    const textIn=el.querySelector('textarea');textIn.value=entry.text||'';
+    let todos=[]; // 待做条目：待办格式（旧文本按行迁移）
+    if(isGallery){
+      todos=(entry.todos&&entry.todos.length?entry.todos:(entry.text||'').split('\n')).map(x=>typeof x==='string'?{t:x.trim(),done:false}:{t:(x.t||'').trim(),done:!!x.done}).filter(x=>x.t);
+    }
+    const textIn=el.querySelector('textarea');if(textIn)textIn.value=entry.text||'';
     const sel=(entry.ing||[]).filter(Boolean);
     if(isGallery){ // 食材标签：历史与搜索（同编辑菜名逻辑，共用历史记录）
       const itemId=p.itemId||null;
@@ -2044,15 +2078,47 @@ Pages.entryEditor={
       });
       topMealTags(10,itemId).then(list=>{histCache=list.map(x=>x.tag);drawAll();});
       drawAll();
+      // 待办编辑：小方格勾选（划线保留），回车添加，× 删除；列表高度随条目数自适应
+      const todoBox=el.querySelector('#en-todos'),todoInp=el.querySelector('#en-todo-inp');
+      function drawTodos(){
+        todoBox.innerHTML='';
+        if(!todos.length)todoBox.appendChild(h('<span style="font-size:12px;color:var(--ink2)">暂无待办，在下方输入添加</span>'));
+        todos.forEach((td,i)=>{
+          const row=h('<div style="display:flex;align-items:flex-start;gap:8px"><button type="button" class="td-box" style="flex:none;width:18px;height:18px;border:2px solid var(--line);border-radius:5px;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:12px;line-height:1;color:#fff"></button><span style="flex:1;min-width:0;font-size:14px;line-height:1.5;word-break:break-word"></span><button type="button" class="td-x" style="flex:none;color:var(--ink2);font-size:14px;padding:0 3px">×</button></div>');
+          const box=row.querySelector('.td-box');
+          box.style.background=td.done?'var(--ok)':'transparent';
+          box.textContent=td.done?'✓':'';
+          const sp=row.querySelector('span');
+          sp.textContent=td.t;
+          if(td.done){sp.style.textDecoration='line-through';sp.style.color='var(--ink2)';}
+          box.onclick=()=>{td.done=!td.done;drawTodos();};
+          row.querySelector('.td-x').onclick=()=>{todos.splice(i,1);drawTodos();};
+          todoBox.appendChild(row);
+        });
+      }
+      todoInp.addEventListener('keydown',e=>{
+        if(e.key==='Enter'){
+          e.preventDefault();
+          const v=todoInp.value.trim();
+          if(!v)return;
+          todos.push({t:v,done:false});
+          todoInp.value='';drawTodos();
+        }
+      });
+      drawTodos();
     }
-    const imgBox=el.querySelector('.editor>div:nth-of-type('+(isGallery?4:3)+')');
-    Img.grid(imgBox,entry.imageIds,{max:3,onChange:async removed=>{if(removed)await DB.del('images',removed);}});
+    const imgBox=el.querySelector('.editor .field:nth-of-type(3)>div');
+    if(!isGallery)Img.grid(imgBox,entry.imageIds,{max:3,onChange:async removed=>{if(removed)await DB.del('images',removed);}});
     el.querySelector('[data-x=save]').onclick=async()=>{
       entry.title=titleIn.value.trim();
-      entry.text=textIn.value;
-      if(!entry.title&&!entry.text&&!entry.imageIds.length){toast('至少写点什么');return;}
+      if(!isGallery)entry.text=textIn.value;
+      if(isGallery){
+        entry.todos=todos;
+        entry.text=todos.map(x=>x.t).join('\n'); // 兼容旧读取逻辑的纯文本
+      }
+      if(!entry.title&&!(entry.todos||[]).length&&!(entry.text||'')&&!(entry.imageIds||[]).length){toast('至少写点什么');return;}
       entry.createdAt=entry.createdAt||Date.now();
-      const out={id:entry.id,bucket:entry.bucket||p.bucket,title:entry.title,text:entry.text,imageIds:[...entry.imageIds],createdAt:entry.createdAt};
+      const out={id:entry.id,bucket:entry.bucket||p.bucket,title:entry.title,text:entry.text,todos:entry.todos,imageIds:[...(entry.imageIds||[])],createdAt:entry.createdAt};
       if(isGallery)out.ing=[...sel];
       await DB.put('entries',out);
       toast('已保存');
@@ -2754,13 +2820,13 @@ Pages.grocery={
         const unit=(parseFloat(x.total)||0)/(parseFloat(x.qty)||1);
         const priceStr=(x.price!==undefined&&x.price!==null&&x.price!=='')?'¥'+(+x.price).toFixed(2)+'/'+u:'¥'+unit.toFixed(2)+'/'+u;
         const qtyStr=(x.qty!==undefined&&x.qty!==null&&x.qty!=='')?x.qty+' '+u:'-';
-        const row=h('<div class="listitem"><div class="li-main"><div class="li-title">'+esc(x.name||'未命名食材')+'</div><div class="li-sub">'+esc(x.date||'')+' · 数量 '+esc(String(qtyStr))+' · 单价 '+priceStr+(x.note?' · '+esc(x.note):'')+'</div></div><button class="btn" data-op="fridge" style="padding:4px 10px;font-size:12px;color:var(--mist);flex:none">入冰箱</button><button class="btn" style="padding:4px 10px;font-size:12px;color:var(--danger);flex:none">删</button></div>');
+        const row=h('<div class="listitem"><div class="li-main"><div class="li-title">'+esc(x.name||'未命名食材')+'</div><div class="li-sub">'+esc(x.date||'')+' · 数量 '+esc(String(qtyStr))+' · 单价 '+priceStr+(x.note?' · '+esc(x.note):'')+'</div></div><button class="btn" data-op="fridge" style="padding:4px 10px;font-size:12px;color:var(--mist);flex:none">入储藏室</button><button class="btn" style="padding:4px 10px;font-size:12px;color:var(--danger);flex:none">删</button></div>');
         row.querySelector('[data-op=fridge]').onclick=()=>{
-          // 选择放入冷藏或冷冻，带入食材名称
-          const s=h('<div class="sheet"><h3>「'+esc(x.name||'未命名食材')+'」放入</h3><div style="display:flex;flex-direction:column;gap:10px"><button class="btn" data-z="cold">🧊 冷藏</button><button class="btn" data-z="frozen">❄️ 冷冻</button><button class="btn" data-z="no">取消</button></div></div>');
+          // 选择放入储藏室的区（冷藏/冷冻/调味品/纸箱），带入食材名称
+          const s=h('<div class="sheet"><h3>「'+esc(x.name||'未命名食材')+'」放入</h3><div style="display:flex;flex-direction:column;gap:10px"><button class="btn" data-z="cold">🧊 冷藏</button><button class="btn" data-z="frozen">❄️ 冷冻</button><button class="btn" data-z="condiment">🧂 调味品</button><button class="btn" data-z="box">📦 纸箱</button><button class="btn" data-z="no">取消</button></div></div>');
           const mm=modal(s);
           s.querySelector('[data-z=no]').onclick=()=>closeModal(mm);
-          s.querySelectorAll('[data-z=cold],[data-z=frozen]').forEach(b=>{
+          s.querySelectorAll('[data-z=cold],[data-z=frozen],[data-z=condiment],[data-z=box]').forEach(b=>{
             b.onclick=()=>{closeModal(mm);openFridgeForm(itemId,b.dataset.z,null,{name:x.name||''},redraw);};
           });
         };
@@ -2800,11 +2866,12 @@ function fridgeEffStatus(r){ // 待消耗且已过保质期 → 自动显示已�
 async function openFridgeForm(itemId,zone,existing,prefill,onSaved){ // 新增/编辑食材：保质期、数量（个/g/几分之一）、搭配、状态
   prefill=prefill||{};
   const isNew=!existing;
-  const rec=existing||{id:uid(),itemId,zone,name:prefill.name||'',cat:'',addedDate:todayKey(),shelfDays:3,qty:1,qtyUnit:'个',pair:'',status:'待消耗'};
+  const rec=existing||{id:uid(),itemId,zone,name:prefill.name||'',cat:'',addedDate:todayKey(),shelfDays:3,qty:1,qtyUnit:'个',pair:'',status:'待消耗',saveWay:'',process:''};
   zone=rec.zone||zone||'cold';
-  const dishes=(await DB.all('entries')).filter(e=>e.bucket==='dish-gallery'&&e.title).map(e=>e.title); // 图鉴菜品供搭配选择
+  const dishes=(await DB.all('entries')).filter(e=>e.bucket==='dish-gallery'&&e.title).map(e=>e.title); // 待做菜品供搭配选择
+  const ZONE_LAB={cold:'冷藏',frozen:'冷冻',condiment:'调味品',box:'纸箱'};
   const sheet=h('<div class="sheet"><h3>'+(isNew?'添加食材':'编辑食材')+'</h3>'
-    +'<div style="display:flex;gap:8px;margin:10px 0"><button type="button" class="tagchip" data-z="cold" style="padding:6px 14px">🧊 冷藏</button><button type="button" class="tagchip" data-z="frozen" style="padding:6px 14px">❄️ 冷冻</button></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"><button type="button" class="tagchip" data-z="cold" style="padding:6px 14px">🧊 冷藏</button><button type="button" class="tagchip" data-z="frozen" style="padding:6px 14px">❄️ 冷冻</button><button type="button" class="tagchip" data-z="condiment" style="padding:6px 14px">🧂 调味品</button><button type="button" class="tagchip" data-z="box" style="padding:6px 14px">📦 纸箱</button></div>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">食材名称</label><input class="input" id="fd-name" placeholder="如 鸡蛋"></div>'
     +'<div id="fd-cat-box" style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">类别（决定冷藏默认保质期）</label><select class="input" id="fd-cat"></select></div>'
     +'<div style="display:flex;gap:10px;margin:10px 0"><div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">入库日期</label><input type="date" class="input" id="fd-added"></div>'
@@ -2813,6 +2880,8 @@ async function openFridgeForm(itemId,zone,existing,prefill,onSaved){ // 新增/�
     +'<div style="flex:none;width:80px"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">单位</label><select class="input" id="fd-unit"><option value="个">个</option><option value="g">g</option><option value="份">几分之一</option></select></div></div>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">搭配</label><div style="display:flex;gap:8px"><select class="input" id="fd-pair-sel" style="flex:1"></select></div><input class="input" id="fd-pair" placeholder="自定义搭配（选了菜品会自动填入，可改）" style="margin-top:6px"></div>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">当前状态</label><select class="input" id="fd-status"><option>待消耗</option><option>已用完</option><option>已过期</option><option>已损坏</option></select></div>'
+    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">保存方法</label><input class="input" id="fd-saveway" placeholder="自定义填写，如 密封冷藏、真空包装"></div>'
+    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">处理方式</label><input class="input" id="fd-process" placeholder="自定义填写，如 清洗切段、分装冷冻"></div>'
     +(isNew?'':'<div style="font-size:12px;color:var(--ink2)">到期日：'+esc(rec.expireDate||'')+' · 现状态：'+esc(fridgeEffStatus(rec))+'</div>')
     +'<div class="row">'+(isNew?'':'<button class="btn danger" id="fd-del" style="margin-right:auto">删除</button>')+'<button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
   const m=modal(sheet);
@@ -2836,6 +2905,8 @@ async function openFridgeForm(itemId,zone,existing,prefill,onSaved){ // 新增/�
   sheet.querySelector('#fd-qty').value=rec.qtyUnit==='份'?fmtFrac(rec.qty||0):String(rec.qty!=null?rec.qty:1);
   sheet.querySelector('#fd-pair').value=rec.pair||'';
   sheet.querySelector('#fd-status').value=rec.status||'待消耗';
+  sheet.querySelector('#fd-saveway').value=rec.saveWay||'';
+  sheet.querySelector('#fd-process').value=rec.process||'';
   drawZone();
   if(rec.cat){const cs=sheet.querySelector('#fd-cat');if(curZone==='cold'&&[...cs.options].some(o=>o.value===rec.cat))cs.value=rec.cat;}
   const qtyIn=sheet.querySelector('#fd-qty'),unitSel=sheet.querySelector('#fd-unit');
@@ -2850,7 +2921,7 @@ async function openFridgeForm(itemId,zone,existing,prefill,onSaved){ // 新增/�
     if(opt&&opt.dataset.days)sheet.querySelector('#fd-shelf').value=opt.dataset.days;
   };
   const pairSel=sheet.querySelector('#fd-pair-sel');
-  pairSel.innerHTML='<option value="">选择图鉴菜品…</option><option value="__custom">✎ 自定义</option>'+dishes.map(d=>'<option>'+esc(d)+'</option>').join('');
+  pairSel.innerHTML='<option value="">选择待做菜品…</option><option value="__custom">✎ 自定义</option>'+dishes.map(d=>'<option>'+esc(d)+'</option>').join('');
   pairSel.onchange=()=>{if(pairSel.value&&pairSel.value!=='__custom')sheet.querySelector('#fd-pair').value=pairSel.value;};
   zoneBtns.forEach(b=>b.onclick=()=>{curZone=b.dataset.z;drawZone();});
   sheet.querySelector('[data-x=no]').onclick=()=>closeModal(m);
@@ -2868,10 +2939,11 @@ async function openFridgeForm(itemId,zone,existing,prefill,onSaved){ // 新增/�
     const out={id:rec.id,itemId,zone:curZone,name,cat:curZone==='cold'?sheet.querySelector('#fd-cat').value:'',
       addedDate:added,shelfDays:shelf,expireDate:addDays(added,shelf),
       qty:Math.max(0,curQty()),qtyUnit:unitSel.value,
-      pair:sheet.querySelector('#fd-pair').value.trim(),status:sheet.querySelector('#fd-status').value};
+      pair:sheet.querySelector('#fd-pair').value.trim(),status:sheet.querySelector('#fd-status').value,
+      saveWay:sheet.querySelector('#fd-saveway').value.trim(),process:sheet.querySelector('#fd-process').value.trim()};
     await DB.put('fridge',out);
     closeModal(m);
-    toast(isNew?'已放入'+(curZone==='cold'?'冷藏':'冷冻'):'已保存');
+    toast(isNew?'已放入'+(ZONE_LAB[curZone]||'储藏室'):'已保存');
     onSaved&&onSaved();
   };
 }
@@ -2879,7 +2951,7 @@ Pages.fridge={
   async render(p){
     const item=p&&p.itemId?await DB.get('items',p.itemId):null;
     const itemId=item?item.id:null;
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">小冰箱</h1><button class="iconbtn" data-x="add">＋</button></div><div id="fd-body" style="padding:4px 16px 30px"></div></div>');
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">储藏室</h1><button class="iconbtn" data-x="add">＋</button></div><div id="fd-body" style="padding:4px 16px 30px"></div></div>');
     const body=el.querySelector('#fd-body');
     async function drawZoneBox(zone,label,ic){
       let list=(await DB.byIndex('fridge','itemId',itemId)).filter(r=>(r.zone||'cold')===zone);
@@ -2897,9 +2969,8 @@ Pages.fridge={
       const tags=box.querySelector('.fd-tags');
       if(!list.length)tags.appendChild(h('<div style="font-size:12.5px;color:var(--ink2)">暂无食材</div>'));
       for(const r of list){
-        const st=fridgeEffStatus(r);
-        const sub=fridgeQtyStr(r)+(r.pair?(' · 搭配 '+r.pair):'')+(st!=='待消耗'?(' · '+st):'');
-        const tag=h('<button type="button" style="max-width:100%;padding:6px 12px;border-radius:999px;color:#fff;text-align:left;box-shadow:var(--shadow)"><span style="font-weight:700">'+esc(r.name||'未命名')+'</span> <span style="font-size:11.5px;opacity:.9">'+esc(sub)+'</span></button>');
+        const tag=h('<button type="button" style="max-width:100%;padding:6px 12px;border-radius:999px;color:#fff;text-align:left;box-shadow:var(--shadow)"><span style="font-weight:700"></span></button>');
+        tag.querySelector('span').textContent=r.name||'未命名'; // 各区标签只显示名称，点开查看全部信息
         tag.style.background=fridgeColor(r.name);
         tag.onclick=()=>openFridgeForm(itemId,zone,r,{},draw);
         tags.appendChild(tag);
@@ -2910,6 +2981,8 @@ Pages.fridge={
       body.innerHTML='';
       await drawZoneBox('cold','冷藏','🧊');
       await drawZoneBox('frozen','冷冻','❄️');
+      await drawZoneBox('condiment','调味品','🧂');
+      await drawZoneBox('box','纸箱','📦');
     }
     el.querySelector('[data-x=add]').onclick=()=>openFridgeForm(itemId,'cold',null,{},draw);
     await draw();
@@ -3088,16 +3161,18 @@ Pages.readShelf={
       const wantN=allBooks.filter(b=>(b.status||'read')==='want'&&!b.hidden).length;
       const readN=allBooks.filter(b=>(b.status||'read')==='read'&&!b.hidden).length;
       const readingN=allBooks.filter(b=>(b.status||'read')==='reading'&&!b.hidden).length;
-      tabs.querySelector('[data-t=want]').textContent='想看 '+wantN;
-      tabs.querySelector('[data-t=read]').textContent='已看 '+readN;
-      tabs.querySelector('[data-t=reading]').textContent='在读 '+readingN;
+      const isCustomRead=item&&item.kind==='custom'; // 自定义阅读模板：在读→当前、已看→历史、想看→种草
+      const TLAB=isCustomRead?{want:'种草',read:'历史',reading:'当前'}:{want:'想看',read:'已看',reading:'在读'};
+      tabs.querySelector('[data-t=want]').textContent=TLAB.want+' '+wantN;
+      tabs.querySelector('[data-t=read]').textContent=TLAB.read+' '+readN;
+      tabs.querySelector('[data-t=reading]').textContent=TLAB.reading+' '+readingN;
       el.querySelector('#shelf-mng').textContent=shelfManage?'完成':'管理';
       if(!books.length){ // 自定义阅读模块按模块名生成空状态文案
         const cn=item&&item.kind==='custom'?item.name:'';
         const msg=tab==='want'
-          ?(cn?('想看的'+esc(cn)+'在这里'):'想看的书会显示在这里')
+          ?(cn?(TLAB.want+'的'+esc(cn)+'在这里'):(TLAB.want+'的书会显示在这里'))
           :(tab==='reading'
-            ?(cn?('在读的'+esc(cn)+'在这里'):'在读的书会显示在这里')
+            ?(cn?(TLAB.reading+'的'+esc(cn)+'在这里'):(TLAB.reading+'的书会显示在这里'))
             :(cn?('还没有'+esc(cn)+'记录'):'还没有记录'));
         shelf.appendChild(h('<div class="empty" style="grid-column:1/-1">'+msg+'</div>'));
       }
@@ -3174,7 +3249,7 @@ Pages.readShelf={
       // 添加按钮（添加到当前文件夹）
       const add=h('<div class="bk add" style="aspect-ratio:3/4">＋</div>');
       add.onclick=async()=>{
-        const name=await promptBox('书名（添加到「'+(tab==='want'?'想看':tab==='read'?'已看':'在读')+'」）');
+        const name=await promptBox('书名（添加到「'+TLAB[tab]+'」）');
         if(!name)return;
         const nb={id:uid(),itemId:itemId||null,title:name,author:'',status:tab,rating:0,review:'',coverId:'',createdAt:Date.now()};
         await DB.put('books',nb);
@@ -3253,16 +3328,18 @@ Pages.bookDetail={
       }
     }
     drawCover();
-    // 想看/在读/已看状态
+    // 想看/在读/已看状态（自定义阅读模板显示为 种草/当前/历史）
     const stBtn=el.querySelector('#bd-status');
-    function refreshStatus(){const s=book.status||'read';stBtn.textContent=s==='want'?'🔖 想看 · 点击移入「在读」':s==='reading'?'📖 在读 · 点击移入「已看」':'✅ 已看 · 点击移入「想看」';}
+    const ownerItem=book.itemId?await DB.get('items',book.itemId):null;
+    const TLAB2=(ownerItem&&ownerItem.kind==='custom')?{want:'种草',read:'历史',reading:'当前'}:{want:'想看',read:'已看',reading:'在读'};
+    function refreshStatus(){const s=book.status||'read';stBtn.textContent=s==='want'?('🔖 '+TLAB2.want+' · 点击移入「'+TLAB2.reading+'」'):s==='reading'?('📖 '+TLAB2.reading+' · 点击移入「'+TLAB2.read+'」'):('✅ '+TLAB2.read+' · 点击移入「'+TLAB2.want+'」');}
     refreshStatus();
     stBtn.onclick=async()=>{
       const s=book.status||'read';
       book.status=s==='want'?'reading':s==='reading'?'read':'want';
       await DB.put('books',book);
       refreshStatus();
-      toast(book.status==='want'?'已移入「想看」':book.status==='reading'?'已移入「在读」':'已移入「已看」');
+      toast('已移入「'+TLAB2[book.status||'read']+'」');
     };
     // 星星（.stars 样式：灰色未点亮 / 沙金色点亮）
     const starBox=el.querySelector('#bd-stars');
@@ -3322,7 +3399,7 @@ Pages.bookDetail={
       const rs=(await DB.all('records')).filter(r=>r.bookId===book.id&&r.date===tk&&r.minutes).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
       bdRtCard.querySelector('#bd-rt-total').textContent='今日已读 '+rs.reduce((s,r)=>s+(r.minutes||0),0)+' 分钟';
       // 今日阅读的书籍信息行：书名 · 状态 · 当前进度
-      const stTxt=(book.status||'read')==='reading'?'在读':(book.status||'read')==='want'?'想看':'已看';
+      const stTxt=TLAB2[(book.status||'read')==='reading'?'reading':(book.status||'read')==='want'?'want':'read'];
       bdRtCard.querySelector('#bd-rt-info').textContent='《'+(book.title||'无题')+'》 · '+stTxt+(book.currentPage?(' · 读到第 '+book.currentPage+' 页'):'');
       const list=bdRtCard.querySelector('#bd-rt-list');
       list.innerHTML='';
