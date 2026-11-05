@@ -1037,13 +1037,9 @@ Pages.home={
       const set=sets[it.id]||new Set();
       const ok=set.has(today);
       const ek0=it.kind==='custom'?(it.specKind||'none'):it.kind;
-      let sub=(ok?'已打卡，坚持'+computeStreak(set)+'天':''); // 未打卡不显示副标题（技能模块除外）
-      if(ek0==='skill'){ // 技能模块：只显示最新一条记录内容（不带日期）
-        const arr=(skMap[it.id]||[]).slice().sort((a,b)=>((b.time||'').localeCompare(a.time||''))||((b.createdAt||0)-(a.createdAt||0)));
-        const s=arr[0];
-        sub=s?esc(s.title||s.text||'暂无记录'):'暂无记录';
-      }
-      const li=h('<div class="hlistitem'+(homeManage?' manage':'')+'" data-id="'+it.id+'" style="--c:var(--'+it.color+')"><div class="licheck'+(ok?' ok':'')+'">'+(ok?'✓':'')+'</div><div class="libody"><div class="liname hand">'+esc(it.name)+'</div><div class="list'+(ek0==='skill'?'':(ok?' ok':''))+'"'+((ek0!=='skill'&&!ok)?' style="display:none"':'')+'>'+sub+'</div></div>'+(homeManage&&!it.builtin?'<button class="btn" data-op="del" style="padding:6px 12px;font-size:13px;color:var(--danger);flex:none">删除</button>':'')+'</div>');
+      const isSkill=ek0==='skill';
+      let sub=(ok&&!isSkill?'已打卡，坚持'+computeStreak(set)+'天':''); // 未打卡不显示副标题；技能模块完全不显示副标题（不再显示最近输入信息）
+      const li=h('<div class="hlistitem'+(homeManage?' manage':'')+'" data-id="'+it.id+'" style="--c:var(--'+it.color+')"><div class="licheck'+(ok?' ok':'')+'">'+(ok?'✓':'')+'</div><div class="libody"><div class="liname hand">'+esc(it.name)+'</div><div class="list'+(ok&&!isSkill?' ok':'')+'"'+((isSkill||!ok)?' style="display:none"':'')+'>'+sub+'</div></div>'+(homeManage&&!it.builtin?'<button class="btn" data-op="del" style="padding:6px 12px;font-size:13px;color:var(--danger);flex:none">删除</button>':'')+'</div>');
       li.onclick=async e=>{
         const op=e.target.closest('[data-op=del]');
         if(op){
@@ -1966,6 +1962,7 @@ Pages.folder={
   async render(p){
     const entries=(await DB.byIndex('entries','bucket',p.bucket)).sort((a,b)=>b.createdAt-a.createdAt);
     const isGallery=(p.bucket||'').indexOf('dish-gallery')>=0; // 饮食待做：卡片内显示待办列表，小方格可勾选
+    const isTips=(p.bucket||'').endsWith('-tips'); // 小 Tip：编辑/删除按钮不显示，长按弹出菜单
     const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(p.name)+'</h1></div><div class="entlist"></div><button class="fab" title="新增">＋</button></div>');
     const list=el.querySelector('.entlist');
     if(!entries.length)list.appendChild(h('<div class="empty" style="padding-top:40px">还没有条目，点右下角 ＋ 添加</div>'));
@@ -2001,6 +1998,34 @@ Pages.folder={
         const thumb=en.querySelector('.thumb');
         if(e.imageIds&&e.imageIds[0]){const im=h('<img alt="">');Img.attach(im,e.imageIds[0]);thumb.appendChild(im);}else thumb.textContent='📝';
       }
+      if(isTips){ // 小 Tip：隐藏行内编辑/删除按钮，长按条目弹出菜单
+        const eop=en.querySelector('.eop');
+        if(eop)eop.remove();
+        let tipLp=false; // 长按后短暂抑制 click，避免松手误触进入编辑页
+        bindLongPress(en,()=>{
+          tipLp=true;setTimeout(()=>tipLp=false,400);
+          const s=h('<div class="sheet"><h3>'+esc(e.title||'小 Tip')+'</h3><div style="display:flex;flex-direction:column;gap:10px"><button class="btn" data-m="edit">✏ 编辑</button><button class="btn danger" data-m="del">🗑 删除</button><button class="btn" data-m="no">取消</button></div></div>');
+          const m=modal(s);
+          s.querySelector('[data-m=no]').onclick=()=>closeModal(m);
+          s.querySelector('[data-m=edit]').onclick=()=>{closeModal(m);Router.go('entryEditor',{entryId:e.id,itemId:p.itemId});};
+          s.querySelector('[data-m=del]').onclick=async()=>{
+            closeModal(m);
+            const y=await confirmBox('删除这条小 Tip？',{danger:true,okText:'删除'});
+            if(y){if(e.imageIds)for(const id of e.imageIds)await DB.del('images',id);await DB.del('entries',e.id);Router.refresh();}
+          };
+        });
+        const _origOnclick=async ev=>{
+          const op=ev.target.closest('[data-op]');
+          if(op){
+            ev.stopPropagation();
+            if(op.dataset.op==='del'){const y=await confirmBox('删除「'+(e.title||'（无标题）')+'」？',{danger:true,okText:'删除'});if(y){if(e.imageIds)for(const id of e.imageIds)await DB.del('images',id);await DB.del('entries',e.id);Router.refresh();}}
+            else Router.go('entryEditor',{entryId:e.id,itemId:p.itemId});
+            return;
+          }
+          Router.go('entryEditor',{entryId:e.id,itemId:p.itemId});
+        };
+        en.onclick=async ev=>{if(tipLp)return;return _origOnclick(ev);};
+      }else{
       en.onclick=async ev=>{
         const op=ev.target.closest('[data-op]');
         if(op){
@@ -2011,6 +2036,7 @@ Pages.folder={
         }
         Router.go('entryEditor',{entryId:e.id,itemId:p.itemId});
       };
+      }
       list.appendChild(en);
     }
     el.querySelector('.fab').onclick=()=>Router.go('entryEditor',{bucket:p.bucket,name:p.name,itemId:p.itemId});
@@ -2486,6 +2512,10 @@ Pages.inventory={
           Router.refresh();
         };
         slot.appendChild(cell);
+        // 物品名称显示在图片下方，与图片居中对齐
+        const nm=h('<div style="font-size:11.5px;color:var(--ink);text-align:center;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>');
+        nm.textContent=o.name||('NO.'+String(s.no).padStart(2,'0'));
+        slot.appendChild(nm);
       }else{
         const cell=h('<button type="button" class="inv-cell"><span class="iempty">＋</span></button>');
         cell.onclick=()=>{
@@ -3159,8 +3189,8 @@ Pages.readShelf={
         const card=h('<div class="bk'+(shelfManage?' manage':'')+'" data-id="'+b.id+'">'+(shelfManage?'<button class="bk-hide" data-op="hide">✕</button>':'')+(b.coverId?'<img alt="">':'<div style="flex:1;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--ink2);font-size:28px">📖</div>')+'<div class="bn"></div></div>');
         if(b.coverId)Img.attach(card.querySelector('img'),b.coverId);
         card.querySelector('.bn').textContent=b.title;
-        // 借阅书角标：封面右上角显示剩余天数/已逾期
-        if(b.borrowDue&&dueLabel(b.borrowDue)){
+        // 借阅书角标：封面右上角显示剩余天数/已逾期（自定义阅读模块不显示，仅在读状态显示）
+        if(b.borrowDue&&dueLabel(b.borrowDue)&&!isCustomRead&&(b.status||'read')==='reading'){
           const bdg=h('<span style="position:absolute;top:5px;right:5px;z-index:2;background:var(--danger);color:#fff;font-size:10.5px;line-height:1;padding:4px 8px;border-radius:999px;box-shadow:var(--shadow)"></span>');
           bdg.textContent=dueLabel(b.borrowDue);
           card.appendChild(bdg);
@@ -3316,8 +3346,15 @@ Pages.bookDetail={
     stBtn.onclick=async()=>{
       const s=book.status||'read';
       book.status=s==='want'?'reading':s==='reading'?'read':'want';
+      if(book.status==='read'){ // 移入已看：完成日期为空则自动填当天（仍可点击字段行手动修改）
+        if(!book.finishDate)book.finishDate=todayKey();
+        if(Array.isArray(book.fields)){if(!book.fields.some(f=>f.key==='finishDate'))book.fields.push({key:'finishDate',label:'完成日期',type:'date'});}
+        else book.fields=[{key:'author',label:'作者',type:'text'},{key:'finishDate',label:'完成日期',type:'date'}];
+      }
       await DB.put('books',book);
       refreshStatus();
+      drawBorrow();
+      drawFields();
       toast('已移入「'+TLAB2[book.status||'read']+'」');
     };
     // 星星（.stars 样式：灰色未点亮 / 沙金色点亮）
@@ -3331,9 +3368,12 @@ Pages.bookDetail={
       }
     }
     drawStars();
-    /* ===== 借阅到期（借的书设置还书日期，书架封面显示剩余天数角标） ===== */
+    /* ===== 借阅到期（借的书设置还书日期，书架封面显示剩余天数角标）；自定义阅读模板去掉借阅时间 ===== */
     const borrowBox=el.querySelector('#bd-borrow');
+    const isCustomOwner=ownerItem&&ownerItem.kind==='custom';
+    if(isCustomOwner)borrowBox.style.display='none';
     function drawBorrow(){
+      borrowBox.style.display=((book.status||'read')==='reading'&&!isCustomOwner)?'':'none'; // 借阅到期仅在读状态显示（自定义模块完全不显示）
       const val=borrowBox.querySelector('#bd-borrow-val');
       if(book.borrowDue){
         const n=dueDaysLeft(book.borrowDue);
@@ -3361,8 +3401,9 @@ Pages.bookDetail={
       };
     };
     drawBorrow();
-    /* ===== 今日阅读计时 + 读到第几页（在读图书） ===== */
+    /* ===== 今日阅读计时 + 读到第几页（在读图书）；自定义阅读模板去掉整个今日阅读板块 ===== */
     const bdRtCard=el.querySelector('#bd-rt');
+    if(isCustomOwner)bdRtCard.style.display='none';
     let bdRtStart=null,bdRtTick=null;
     function bdRtFmt(sec){return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');}
     async function bdSaveRead(mins,src){
