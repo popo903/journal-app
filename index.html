@@ -2654,7 +2654,8 @@ const TL_KINDS={reflect:{name:'反思集',bucket:'tl-reflect',icon:'📝'},salar
 function openTlForm(kind,existing){ // 新增/编辑时间轴记录：日期、时间（可选）、内容；工资条另有人工费
   const K=TL_KINDS[kind];
   const isNew=!existing;
-  const rec=existing||{id:uid(),bucket:K.bucket,title:'',text:'',fee:'',tlDate:todayKey(),tlTime:'',imageIds:[],createdAt:Date.now()};
+  const nowHM=()=>{const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+  const rec=existing||{id:uid(),bucket:K.bucket,title:'',text:'',fee:'',tlDate:todayKey(),tlTime:nowHM(),imageIds:[],createdAt:Date.now()};
   const sheet=h('<div class="sheet"><h3>'+(isNew?'新增'+K.name:'编辑'+K.name)+'</h3>'
     +'<div style="display:flex;gap:10px"><div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">日期</label><input type="date" class="input" id="tl-date"></div>'
     +'<div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">时间（可选）</label><input type="time" class="input" id="tl-time"></div></div>'
