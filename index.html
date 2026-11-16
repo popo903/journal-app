@@ -63,6 +63,20 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .seg button.on{background:var(--coffee);color:#fff}
 .fab{position:fixed;right:20px;bottom:26px;width:54px;height:54px;border-radius:50%;background:var(--coffee);color:#fff;font-size:26px;box-shadow:var(--shadow2);display:flex;align-items:center;justify-content:center;z-index:20}
 .fab:active{transform:scale(.94)}
+/* ===== 时间轴（反思集/工资条） ===== */
+.tl-list{display:flex;flex-direction:column;gap:12px;padding:4px 16px 96px}
+.tl-item{display:flex;gap:10px;cursor:pointer}
+.tl-time{width:80px;flex:none;font-size:11.5px;color:var(--ink2);text-align:right;line-height:1.45;padding-top:1px}
+.tl-time b{display:block;font-size:13.5px;color:var(--ink);font-weight:600}
+.tl-mid{width:14px;flex:none;position:relative}
+.tl-mid::before{content:'';position:absolute;left:6px;top:0;bottom:-12px;width:2px;background:var(--line)}
+.tl-item:last-child .tl-mid::before{bottom:auto;height:16px}
+.tl-dot{position:absolute;left:3px;top:6px;width:8px;height:8px;border-radius:50%;background:var(--coffee)}
+.tl-body{flex:1;min-width:0;background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:10px 12px;font-size:14px;line-height:1.6;word-break:break-word}
+.tl-body .tl-fee{color:var(--bean);font-weight:700;font-size:15px}
+.tl-stat{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);margin:4px 16px 14px;padding:12px 14px;display:flex;align-items:center;gap:10px}
+.tl-stat .lab{font-size:12.5px;color:var(--ink2)}
+.tl-stat .val{font-size:22px;font-weight:800;color:var(--bean)}
 
 /* ===== S3 页面样式 ===== */
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;padding:8px 16px 26px}
@@ -898,6 +912,8 @@ function bucketDisplayName(bucket,byId){ // 由 bucket 推导文件夹显示名
   if(b==='sew-inspiration'||b.endsWith('-sew-inspiration'))return '灵感收集';
   if(b==='sew-tips'||b.endsWith('-sew-tips')||b==='eat-tips'||b.endsWith('-eat-tips'))return '小 Tip';
   if(b==='dish-gallery'||b.endsWith('-dish-gallery'))return nm?(nm+'待做'):'待做';
+  if(b==='tl-reflect')return '反思集';
+  if(b==='tl-salary')return '工资条';
   return '条目';
 }
 async function globalSearch(q){
@@ -929,10 +945,14 @@ async function globalSearch(q){
     if((x.type||'').toLowerCase().indexOf(q)>=0)
       push({t:'运动',label:itemName(x.itemId),date:x.date,text:(x.type||'')+' '+(x.minutes||0)+' 分钟',go:()=>Router.go('day',{itemId:x.itemId,date:x.date})});
   }
-  // 文件夹条目（灵感/Tip/图鉴/待做）
+  // 文件夹条目（灵感/Tip/图鉴/待做）+ 时间轴记录
   for(const e of await DB.all('entries')){
     if(((e.title||'')+' '+(e.text||'')).toLowerCase().indexOf(q)>=0){
       const nm=bucketDisplayName(e.bucket,byId);
+      if(e.bucket==='tl-reflect'||e.bucket==='tl-salary'){
+        push({t:'条目',label:nm,date:e.tlDate||'',text:e.title||(e.text||''),go:()=>Router.go('timeline',{kind:e.bucket==='tl-salary'?'salary':'reflect'})});
+        continue;
+      }
       push({t:'条目',label:nm,date:e.createdAt?new Date(e.createdAt).toISOString().slice(0,10):'',text:e.title||(e.text||''),go:()=>Router.go('folder',{bucket:e.bucket,name:nm})});
     }
   }
@@ -1039,8 +1059,15 @@ Pages.home={
       const ek0=it.kind==='custom'?(it.specKind||'none'):it.kind;
       const isSkill=ek0==='skill';
       let sub=(ok&&!isSkill?'已打卡，坚持'+computeStreak(set)+'天':''); // 未打卡不显示副标题；技能模块完全不显示副标题（不再显示最近输入信息）
-      const li=h('<div class="hlistitem'+(homeManage?' manage':'')+'" data-id="'+it.id+'" style="--c:var(--'+it.color+')"><div class="licheck'+(ok?' ok':'')+'">'+(ok?'✓':'')+'</div><div class="libody"><div class="liname hand">'+esc(it.name)+'</div><div class="list'+(ok&&!isSkill?' ok':'')+'"'+((isSkill||!ok)?' style="display:none"':'')+'>'+sub+'</div></div>'+(homeManage&&!it.builtin?'<button class="btn" data-op="del" style="padding:6px 12px;font-size:13px;color:var(--danger);flex:none">删除</button>':'')+'</div>');
+      const li=h('<div class="hlistitem'+(homeManage?' manage':'')+'" data-id="'+it.id+'" style="--c:var(--'+it.color+')"><div class="licheck'+(ok?' ok':'')+'">'+(ok?'✓':'')+'</div><div class="libody"><div class="liname hand">'+esc(it.name)+'</div><div class="list'+(ok&&!isSkill?' ok':'')+'"'+((isSkill||!ok)?' style="display:none"':'')+'>'+sub+'</div></div>'+(homeManage?'<button class="btn" data-op="rename" style="padding:6px 12px;font-size:13px;flex:none">改名</button>':'')+(homeManage&&!it.builtin?'<button class="btn" data-op="del" style="padding:6px 12px;font-size:13px;color:var(--danger);flex:none">删除</button>':'')+'</div>');
       li.onclick=async e=>{
+        const rn=e.target.closest('[data-op=rename]');
+        if(rn){
+          e.stopPropagation();
+          const v=await promptBox('重命名「'+it.name+'」',it.name);
+          if(v&&v!==it.name){await DB.put('items',Object.assign({},it,{name:v}));toast('已改名为「'+v+'」');Router.refresh();}
+          return;
+        }
         const op=e.target.closest('[data-op=del]');
         if(op){
           const yes=await confirmBox('删除「'+it.name+'」将同时删除它的全部记录和条目，且无法恢复。确定删除？',{danger:true,okText:'删除'});
@@ -2052,7 +2079,7 @@ Pages.entryEditor={
     const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+(isNew?'新增':'编辑')+' · '+esc(bucketName)+'</h1></div><div class="editor"><div class="field"><label>'+(isGallery?'待办事项（标题）':'标题')+'</label><input class="input" placeholder="'+(isGallery?'要做的一道菜/一件事':'给这条起个名字')+'"></div>'+(isGallery
       ?'<div class="field"><label>注意事项</label><textarea class="textarea" id="en-note" placeholder="做法要点、注意事项…"></textarea></div>'
       :'<div class="field"><label>内容</label><textarea class="textarea" placeholder="随便写点什么…"></textarea></div><div class="field"><label>图片（最多 3 张）</label><div></div></div>')
-      +'<div class="field"><label>食材标签（点选添加，与添加菜名共用历史）</label><div id="en-hist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="en-search" placeholder="输入首字搜索标签，回车直接添加" style="margin-bottom:6px"><div id="en-searchres" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><div id="en-sel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px"></div></div><div class="btnrow"><button class="btn" data-x="back">取消</button><button class="btn primary" data-x="save">保存</button></div></div></div>');
+      +'<div class="field"><label>'+(isGallery?'食材标签（点选添加，与添加菜名共用历史）':'标签（点选添加，回车新建）')+'</label><div id="en-hist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="en-search" placeholder="输入首字搜索标签，回车直接添加" style="margin-bottom:6px"><div id="en-searchres" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><div id="en-sel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px"></div></div><div class="btnrow"><button class="btn" data-x="back">取消</button><button class="btn primary" data-x="save">保存</button></div></div></div>');
     const titleIn=el.querySelector('.input');titleIn.value=entry.title||'';
     const textIn=el.querySelector('textarea');if(textIn)textIn.value=entry.text||'';
     if(isGallery){ // 旧版多条待办数据迁移：合并回注意事项文本
@@ -2067,7 +2094,7 @@ Pages.entryEditor={
       setTimeout(autoGrow,0);
     }
     const sel=(entry.ing||[]).filter(Boolean);
-    if(isGallery){ // 食材标签：历史与搜索（同编辑菜名逻辑，共用历史记录）
+    if(true){ // 食材标签：历史与搜索（同编辑菜名逻辑，共用历史记录）；所有条目类型均可添加标签（修复小 Tip 无法加标签）
       const itemId=p.itemId||null;
       const histBox=el.querySelector('#en-hist'),selBox=el.querySelector('#en-sel'),resBox=el.querySelector('#en-searchres'),searchInp=el.querySelector('#en-search');
       let histCache=[];
@@ -2124,7 +2151,8 @@ Pages.entryEditor={
       if(!entry.title&&!(entry.text||'')&&!(entry.imageIds||[]).length){toast('至少写点什么');return;}
       entry.createdAt=entry.createdAt||Date.now();
       const out={id:entry.id,bucket:entry.bucket||p.bucket,title:entry.title,text:entry.text,imageIds:[...(entry.imageIds||[])],createdAt:entry.createdAt};
-      if(isGallery){out.ing=[...sel];out.done=entry.done||false;} // 待做：标题即待办，done 记录勾选状态
+      out.ing=[...sel]; // 标签对所有条目类型生效（小 Tip 等）
+      if(isGallery)out.done=entry.done||false; // 待做：done 记录勾选状态
       await DB.put('entries',out);
       toast('已保存');
       Router.back();
@@ -2288,10 +2316,10 @@ async function clearAllDB(){
 
 /* ===== 物品使用打卡图鉴 ===== */
 let invTag=''; // 当前筛选标签，'' 表示全部
-function hinvTabs(mode){ // 打卡⇄图鉴 tab 栏（居中黑体字，当前页下方红色横线）
-  const bar=h('<div class="hinv-tabs"><button class="hinv-tab'+(mode==='home'?' on':'')+'" data-t="home">打卡</button><button class="hinv-tab'+(mode==='inv'?' on':'')+'" data-t="inv">图鉴</button></div>');
+function hinvTabs(mode){ // 打卡⇄图鉴⇄时间轴 tab 栏（居中黑体字，当前页下方红色横线）
+  const bar=h('<div class="hinv-tabs"><button class="hinv-tab'+(mode==='home'?' on':'')+'" data-t="home">打卡</button><button class="hinv-tab'+(mode==='inv'?' on':'')+'" data-t="inv">图鉴</button><button class="hinv-tab'+(mode==='tl'?' on':'')+'" data-t="tl">时间轴</button></div>');
   bar.querySelectorAll('.hinv-tab').forEach(b=>{
-    b.onclick=()=>{const t=b.dataset.t;if(t!==mode)Router.go(t==='inv'?'invHub':'home');};
+    b.onclick=()=>{const t=b.dataset.t;if(t!==mode)Router.go(t==='inv'?'invHub':t==='tl'?'timelineHub':'home');};
   });
   return bar;
 }
@@ -2541,6 +2569,7 @@ Pages.inventory={
         +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">标签（用于分类筛选）</label><input class="input" id="ie-tag" value="'+esc(o.tag||'')+'" placeholder="如 厨房、文具"></div>'
         +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">评星等级</label><div class="stars" id="ie-stars"></div></div>'
         +'<div style="margin:10px 0;display:flex;align-items:center;gap:10px"><button class="btn" id="ie-img">📷 上传图片</button><img id="ie-preview" style="width:48px;height:48px;object-fit:cover;border-radius:8px;'+(o.imageId?'':'display:none')+'" alt=""></div>'
+        +(isNew?'':'<div style="margin:10px 0;display:flex;gap:8px"><button type="button" class="btn" id="ie-move" style="flex:1">📦 移动到其他图鉴</button><button type="button" class="btn" id="ie-copy" style="flex:1">📄 复制到其他图鉴</button></div>')
         +'<div class="row">'+(isNew?'':'<button class="btn danger" data-x="del">删除</button>')+'<button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
       // 星级
       const starBox=sheet.querySelector('#ie-stars');
@@ -2571,6 +2600,30 @@ Pages.inventory={
         const yes=await confirmBox('确定删除「'+esc(o.name||'该物品')+'」？',{danger:true,okText:'删除'});
         if(yes){await DB.del('inventory',o.id);closeModal(m);toast('已删除');Router.refresh();}
       };
+      // 移动/复制到其他图鉴
+      const pickInv=(title,done)=>{
+        DB.all('items').then(items=>{
+          const invs=items.filter(it=>(it.kind==='inventory'||(it.kind==='custom'&&it.specKind==='inventory'))&&it.id!==o.itemId).sort((a,b)=>a.order-b.order);
+          if(!invs.length){toast('没有其他图鉴');return;}
+          const s2=h('<div class="sheet"><h3>'+esc(title)+'</h3><div id="ie-inv-list" style="display:flex;flex-direction:column;gap:10px"></div><div class="row"><button class="btn" data-x="no2">取消</button></div></div>');
+          const m2=modal(s2);
+          s2.querySelector('[data-x=no2]').onclick=()=>closeModal(m2);
+          invs.forEach(it=>{
+            const b=h('<button class="btn"></button>');b.textContent='📚 '+it.name;
+            b.onclick=()=>{closeModal(m2);done(it);};
+            s2.querySelector('#ie-inv-list').appendChild(b);
+          });
+        });
+      };
+      const mvBtn=sheet.querySelector('#ie-move');
+      if(mvBtn)mvBtn.onclick=()=>pickInv('移动到哪个图鉴？',async it=>{
+        o.itemId=it.id;await DB.put('inventory',o);closeModal(m);toast('已移动到「'+it.name+'」');Router.refresh();
+      });
+      const cpBtn=sheet.querySelector('#ie-copy');
+      if(cpBtn)cpBtn.onclick=()=>pickInv('复制到哪个图鉴？',async it=>{
+        const c2=Object.assign({},o,{id:uid(),itemId:it.id,createdAt:Date.now()});
+        await DB.put('inventory',c2);closeModal(m);toast('已复制到「'+it.name+'」');Router.refresh();
+      });
       sheet.querySelector('[data-x="ok"]').onclick=async()=>{
         o.name=sheet.querySelector('#ie-name').value.trim();
         o.price=sheet.querySelector('#ie-price').value;
@@ -2586,6 +2639,108 @@ Pages.inventory={
         Router.refresh();
       };
     }
+    return el;
+  }
+};
+
+/* ===== J5 时间轴（反思集 / 工资条）===== */
+const TL_KINDS={reflect:{name:'反思集',bucket:'tl-reflect',icon:'📝'},salary:{name:'工资条',bucket:'tl-salary',icon:'💰'}};
+function openTlForm(kind,existing){ // 新增/编辑时间轴记录：日期、时间（可选）、内容；工资条另有人工费
+  const K=TL_KINDS[kind];
+  const isNew=!existing;
+  const rec=existing||{id:uid(),bucket:K.bucket,title:'',text:'',fee:'',tlDate:todayKey(),tlTime:'',imageIds:[],createdAt:Date.now()};
+  const sheet=h('<div class="sheet"><h3>'+(isNew?'新增'+K.name:'编辑'+K.name)+'</h3>'
+    +'<div style="display:flex;gap:10px"><div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">日期</label><input type="date" class="input" id="tl-date"></div>'
+    +'<div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">时间（可选）</label><input type="time" class="input" id="tl-time"></div></div>'
+    +(kind==='salary'?'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">人工费（元）</label><input type="number" min="0" step="0.01" class="input" id="tl-fee" placeholder="如 120.00"></div>':'')
+    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">'+(kind==='salary'?'内容（如 项目名称、工作内容）':'记录内容')+'</label><textarea class="textarea" id="tl-text" placeholder="随便写点什么…"></textarea></div>'
+    +'<div class="row">'+(isNew?'':'<button class="btn danger" data-x="tldel" style="margin-right:auto">删除</button>')+'<button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
+  const m=modal(sheet);
+  sheet.querySelector('#tl-date').value=rec.tlDate||todayKey();
+  sheet.querySelector('#tl-time').value=rec.tlTime||'';
+  sheet.querySelector('#tl-text').value=rec.text||'';
+  if(kind==='salary')sheet.querySelector('#tl-fee').value=rec.fee!==''&&rec.fee!=null?rec.fee:'';
+  const delBtn=sheet.querySelector('[data-x=tldel]');
+  if(delBtn)delBtn.onclick=async()=>{
+    const y=await confirmBox('删除这条'+K.name+'记录？',{danger:true,okText:'删除'});
+    if(y){await DB.del('entries',rec.id);closeModal(m);toast('已删除');Router.refresh();}
+  };
+  sheet.querySelector('[data-x=no]').onclick=()=>closeModal(m);
+  sheet.querySelector('[data-x=ok]').onclick=async()=>{
+    const tlDate=sheet.querySelector('#tl-date').value||todayKey();
+    const tlTime=sheet.querySelector('#tl-time').value||'';
+    const text=sheet.querySelector('#tl-text').value.trim();
+    let fee='';
+    if(kind==='salary'){
+      fee=sheet.querySelector('#tl-fee').value;
+      if(fee!==''&&isNaN(parseFloat(fee))){toast('人工费请填数字');return;}
+    }
+    if(!text&&!(parseFloat(fee)>0)){toast('至少写点什么');return;}
+    const out={id:rec.id,bucket:K.bucket,title:rec.title||'',text,fee,tlDate,tlTime,imageIds:[...(rec.imageIds||[])],createdAt:rec.createdAt||Date.now()};
+    await DB.put('entries',out);
+    closeModal(m);
+    toast(isNew?'已记录':'已保存');
+    Router.refresh();
+  };
+}
+Pages.timelineHub={ // 时间轴首页：反思集 / 工资条 两个项目（风格同图鉴列表）
+  async render(){
+    const el=h('<div><div class="topbar stack"><h1 class="hand" style="font-size:19px">“把日子过成一条线”</h1><div class="tb-tools"><span class="sp"></span><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist" id="tlhub-list" style="padding-top:6px"></div></div>');
+    el.querySelector('.topbar').after(hinvTabs('tl'));
+    el.querySelector('[data-x=settings]').onclick=()=>Router.go('settings');
+    const list=el.querySelector('#tlhub-list');
+    const reflectAll=await DB.byIndex('entries','bucket','tl-reflect');
+    const salaryAll=await DB.byIndex('entries','bucket','tl-salary');
+    const ym=todayKey().slice(0,7);
+    const monthFee=salaryAll.reduce((s,e)=>{return (e.tlDate||'').indexOf(ym)===0?s+(parseFloat(e.fee)||0):s;},0);
+    const rows=[
+      {kind:'reflect',sub:reflectAll.length+' 条记录'},
+      {kind:'salary',sub:'本月工资 ¥'+monthFee.toFixed(2).replace(/\.00$/,'')}
+    ];
+    for(const r of rows){
+      const K=TL_KINDS[r.kind];
+      const li=h('<div class="invhubrow" style="--c:var(--'+(r.kind==='salary'?'bean':'mist')+')"><div class="ih-main"><div class="ih-name hand">'+K.icon+' '+K.name+'</div><div class="ih-sub">'+r.sub+'</div></div><span class="ih-arrow">›</span></div>');
+      li.onclick=()=>Router.go('timeline',{kind:r.kind});
+      list.appendChild(li);
+    }
+    // 右滑返回打卡页
+    bindSwipeRight(el,()=>Router.go('home'));
+    return el;
+  }
+};
+Pages.timeline={ // 时间轴详情：左侧时间 + 竖向轴线 + 右侧内容；工资条页顶显示本月工资
+  async render(p){
+    const kind=p&&p.kind==='salary'?'salary':'reflect';
+    const K=TL_KINDS[kind];
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+K.icon+' '+K.name+'</h1></div></div>');
+    let all=(await DB.byIndex('entries','bucket',K.bucket));
+    all=all.sort((a,b)=>{
+      const ka=(a.tlDate||'')+'T'+(a.tlTime||'')+'_'+(a.createdAt||0);
+      const kb=(b.tlDate||'')+'T'+(b.tlTime||'')+'_'+(b.createdAt||0);
+      return kb.localeCompare(ka); // 新的在上，上下滑动查看
+    });
+    if(kind==='salary'){
+      const ym=todayKey().slice(0,7);
+      const monthFee=all.reduce((s,e)=>{return (e.tlDate||'').indexOf(ym)===0?s+(parseFloat(e.fee)||0):s;},0);
+      const stat=h('<div class="tl-stat"><div class="lab">本月工资</div><div class="val">¥'+monthFee.toFixed(2).replace(/\.00$/,'')+'</div><span style="font-size:11.5px;color:var(--ink2)">按当月人工费合计自动统计</span></div>');
+      el.appendChild(stat);
+    }
+    const list=h('<div class="tl-list"></div>');
+    if(!all.length)list.appendChild(h('<div class="empty" style="padding:30px 10px">还没有'+K.name+'记录<br>点右下角 ＋ 快速添加</div>'));
+    for(const e of all){
+      const d=e.tlDate||'';
+      const time=e.tlTime||'';
+      const item=h('<div class="tl-item"><div class="tl-time"><b></b><span></span></div><div class="tl-mid"><div class="tl-dot"></div></div><div class="tl-body"><span></span>'+(kind==='salary'&&parseFloat(e.fee)>0?'<div class="tl-fee">¥'+(Math.round(parseFloat(e.fee)*100)/100)+'</div>':'')+'</div></div>');
+      item.querySelector('.tl-time b').textContent=d?d.slice(5):'';
+      item.querySelector('.tl-time span').textContent=(d?d.slice(0,4):'')+(time?' '+time:'');
+      item.querySelector('.tl-body span').textContent=e.text||'（无内容）';
+      item.onclick=()=>openTlForm(kind,e);
+      list.appendChild(item);
+    }
+    el.appendChild(list);
+    const fab=h('<button class="fab" title="快速添加">＋</button>');
+    fab.onclick=()=>openTlForm(kind,null);
+    el.appendChild(fab);
     return el;
   }
 };
@@ -2891,6 +3046,7 @@ async function openFridgeForm(itemId,zone,existing,prefill,onSaved){ // 新增/�
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">当前状态</label><select class="input" id="fd-status"><option>待消耗</option><option>已用完</option><option>已过期</option><option>已损坏</option></select></div>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">保存方法</label><input class="input" id="fd-saveway" placeholder="自定义填写，如 密封冷藏、真空包装"></div>'
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">处理方式</label><input class="input" id="fd-process" placeholder="自定义填写，如 清洗切段、分装冷冻"></div>'
+    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">做法（可添加多条）</label><div id="fd-ways"></div><button type="button" class="btn" id="fd-addway" style="margin-top:6px">＋ 添加做法</button></div>'
     +(isNew?'':'<div style="font-size:12px;color:var(--ink2)">到期日：'+esc(rec.expireDate||'')+' · 现状态：'+esc(fridgeEffStatus(rec))+'</div>')
     +'<div class="row">'+(isNew?'':'<button class="btn danger" id="fd-del" style="margin-right:auto">删除</button>')+'<button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
   const m=modal(sheet);
@@ -2916,6 +3072,28 @@ async function openFridgeForm(itemId,zone,existing,prefill,onSaved){ // 新增/�
   sheet.querySelector('#fd-status').value=rec.status||'待消耗';
   sheet.querySelector('#fd-saveway').value=rec.saveWay||'';
   sheet.querySelector('#fd-process').value=rec.process||'';
+  // 做法列表：多条自由文本，可增删
+  const waysBox=sheet.querySelector('#fd-ways');
+  let ways=(rec.ways||[]).slice();
+  function drawWays(){
+    waysBox.innerHTML='';
+    if(!ways.length){waysBox.appendChild(h('<div style="font-size:12px;color:var(--ink2)">暂无做法，点下方按钮添加</div>'));return;}
+    ways.forEach((w,i)=>{
+      const row=h('<div style="display:flex;gap:6px;margin-bottom:6px"><input class="input fd-way-inp" style="flex:1;min-width:0" placeholder="做法步骤，如 焯水后清蒸"><button type="button" class="btn fd-way-del" style="flex:none;padding:6px 10px;color:var(--danger)">×</button></div>');
+      row.querySelector('.fd-way-inp').value=w;
+      row.querySelector('.fd-way-inp').addEventListener('input',e=>{ways[i]=e.target.value;});
+      row.querySelector('.fd-way-del').onclick=()=>{ways.splice(i,1);drawWays();};
+      waysBox.appendChild(row);
+    });
+  }
+  drawWays();
+  sheet.querySelector('#fd-addway').onclick=()=>{
+    waysBox.querySelectorAll('.fd-way-inp').forEach((inp,i)=>{ways[i]=inp.value;});
+    ways.push('');
+    drawWays();
+    const inps=waysBox.querySelectorAll('.fd-way-inp');
+    if(inps.length)inps[inps.length-1].focus();
+  };
   drawZone();
   if(rec.cat){const cs=sheet.querySelector('#fd-cat');if(curZone==='cold'&&[...cs.options].some(o=>o.value===rec.cat))cs.value=rec.cat;}
   const qtyIn=sheet.querySelector('#fd-qty'),unitSel=sheet.querySelector('#fd-unit');
@@ -2942,6 +3120,8 @@ async function openFridgeForm(itemId,zone,existing,prefill,onSaved){ // 新增/�
   sheet.querySelector('[data-x=ok]').onclick=async()=>{
     const name=sheet.querySelector('#fd-name').value.trim();
     if(!name){toast('请填写食材名称');return;}
+    waysBox.querySelectorAll('.fd-way-inp').forEach((inp,i)=>{if(ways[i]!=null)ways[i]=inp.value;});
+    const waysOut=ways.map(t=>(t||'').trim()).filter(Boolean);
     const added=sheet.querySelector('#fd-added').value||todayKey();
     const shelf=parseInt(sheet.querySelector('#fd-shelf').value,10);
     if(!shelf||shelf<1){toast('请填写保质期天数');return;}
@@ -2949,7 +3129,8 @@ async function openFridgeForm(itemId,zone,existing,prefill,onSaved){ // 新增/�
       addedDate:added,shelfDays:shelf,expireDate:addDays(added,shelf),
       qty:Math.max(0,curQty()),qtyUnit:unitSel.value,
       pair:sheet.querySelector('#fd-pair').value.trim(),status:sheet.querySelector('#fd-status').value,
-      saveWay:sheet.querySelector('#fd-saveway').value.trim(),process:sheet.querySelector('#fd-process').value.trim()};
+      saveWay:sheet.querySelector('#fd-saveway').value.trim(),process:sheet.querySelector('#fd-process').value.trim(),
+      ways:waysOut};
     await DB.put('fridge',out);
     closeModal(m);
     toast(isNew?'已放入'+(ZONE_LAB[curZone]||'储藏室'):'已保存');
