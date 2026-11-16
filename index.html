@@ -1996,7 +1996,15 @@ Pages.folder={
     for(const e of entries){
       const en=h('<div class="ent"><div class="thumb"></div><div class="ebody"><div class="etitle"></div><div class="etext"></div><div class="eop"><button data-op="edit">编辑</button><button data-op="del" class="del">删除</button></div></div></div>');
       en.querySelector('.etitle').textContent=e.title||'（无标题）';
-      en.querySelector('.etext').textContent=(e.text||'').slice(0,60);
+      const etextEl=en.querySelector('.etext');
+      etextEl.textContent=(e.text||'').slice(0,60);
+      if(isTips){ // 小 Tip：内容直接显示全部文字，不截断不需要滑动
+        etextEl.textContent=e.text||'';
+        etextEl.style.display='block';
+        etextEl.style.overflow='visible';
+        etextEl.style.webkitLineClamp='unset';
+        etextEl.style.whiteSpace='pre-wrap';
+      }
       if(isGallery){ // 待做：每条记录即一条待办，标题前小方格，勾选划线保留，再点取消
         if(e.todos&&e.todos.length){ // 旧版多条待办数据迁移：合并回注意事项文本
           const extra=e.todos.map(x=>(x.t||'').trim()).filter(Boolean).join('\n');
