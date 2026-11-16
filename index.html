@@ -1996,15 +1996,7 @@ Pages.folder={
     for(const e of entries){
       const en=h('<div class="ent"><div class="thumb"></div><div class="ebody"><div class="etitle"></div><div class="etext"></div><div class="eop"><button data-op="edit">编辑</button><button data-op="del" class="del">删除</button></div></div></div>');
       en.querySelector('.etitle').textContent=e.title||'（无标题）';
-      const etextEl=en.querySelector('.etext');
-      etextEl.textContent=(e.text||'').slice(0,60);
-      if(isTips){ // 小 Tip：内容直接显示全部文字，不截断不需要滑动
-        etextEl.textContent=e.text||'';
-        etextEl.style.display='block';
-        etextEl.style.overflow='visible';
-        etextEl.style.webkitLineClamp='unset';
-        etextEl.style.whiteSpace='pre-wrap';
-      }
+      en.querySelector('.etext').textContent=(e.text||'').slice(0,60);
       if(isGallery){ // 待做：每条记录即一条待办，标题前小方格，勾选划线保留，再点取消
         if(e.todos&&e.todos.length){ // 旧版多条待办数据迁移：合并回注意事项文本
           const extra=e.todos.map(x=>(x.t||'').trim()).filter(Boolean).join('\n');
@@ -2090,16 +2082,22 @@ Pages.entryEditor={
       +'<div class="field"><label>'+(isGallery?'食材标签（点选添加，与添加菜名共用历史）':'标签（点选添加，回车新建）')+'</label><div id="en-hist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="en-search" placeholder="输入首字搜索标签，回车直接添加" style="margin-bottom:6px"><div id="en-searchres" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><div id="en-sel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px"></div></div><div class="btnrow"><button class="btn" data-x="back">取消</button><button class="btn primary" data-x="save">保存</button></div></div></div>');
     const titleIn=el.querySelector('.input');titleIn.value=entry.title||'';
     const textIn=el.querySelector('textarea');if(textIn)textIn.value=entry.text||'';
+    if(textIn){ // 内容文本框高度随内容自适应，直接显示全部文字，无需内部滚动
+      textIn.style.resize='none';
+      const autoGrow=()=>{ // 动态补偿上下边框高度，避免 box-sizing 差值导致内部微滚动
+        textIn.style.height='auto';
+        const bd=textIn.offsetHeight-textIn.clientHeight;
+        textIn.style.height=(textIn.scrollHeight+bd)+'px';
+      };
+      textIn.addEventListener('input',autoGrow);
+      setTimeout(autoGrow,0);
+    }
     if(isGallery){ // 旧版多条待办数据迁移：合并回注意事项文本
       if(entry.todos&&entry.todos.length){
         const extra=entry.todos.map(x=>(x.t||'').trim()).filter(Boolean).join('\n');
         if(extra)entry.text=(entry.text?entry.text+'\n':'')+extra;
         delete entry.todos;
       }
-      // 注意事项文本框高度随内容自适应，不出现滚动条
-      const autoGrow=()=>{textIn.style.height='auto';textIn.style.height=textIn.scrollHeight+'px';};
-      textIn.addEventListener('input',autoGrow);
-      setTimeout(autoGrow,0);
     }
     const sel=(entry.ing||[]).filter(Boolean);
     if(true){ // 食材标签：历史与搜索（同编辑菜名逻辑，共用历史记录）；所有条目类型均可添加标签（修复小 Tip 无法加标签）
