@@ -2006,7 +2006,7 @@ Pages.folder={
       entIdx++;
       const tipNo=isTips?(entries.length-entIdx+1):0; // 小 Tip 编号：按创建顺序递增，列表新在上（编号从大到小）
       const en=h(isTips
-        ?'<div class="ent"><div class="ebody"><div class="etitle" style="display:flex;align-items:baseline;gap:6px"><span class="eno" style="flex:none;font-size:13px;color:var(--ink2);font-weight:700"></span><span class="etn" style="flex:1;min-width:0"></span></div><div class="etext"></div></div></div>'
+        ?'<div class="ent"><div class="ebody" style="display:grid;grid-template-columns:auto 1fr;column-gap:6px;align-items:baseline"><span class="eno" style="font-size:13px;color:var(--ink2);font-weight:700"></span><span class="etn" style="min-width:0"></span><span></span><div class="etext" style="min-width:0"></div></div></div>'
         :'<div class="ent"><div class="thumb"></div><div class="ebody"><div class="etitle"></div><div class="etext"></div><div class="eop"><button data-op="edit">编辑</button><button data-op="del" class="del">删除</button></div></div></div>');
       if(isTips){ // 小 Tip：编号+标题+内容摘要，不显示图片（图片进编辑页查看）
         en.querySelector('.eno').textContent=tipNo+'.';
