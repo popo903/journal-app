@@ -43,8 +43,8 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .textarea{resize:vertical;min-height:84px;line-height:1.7}
 .field{margin-bottom:12px}
 .field label{display:block;font-size:13px;color:var(--ink2);margin-bottom:5px}
-.mask{position:fixed;inset:0;background:rgba(74,63,53,.38);display:flex;align-items:center;justify-content:center;padding:24px;z-index:50;animation:fade .15s}
-.sheet{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow2);padding:20px;width:100%;max-width:360px}
+.mask{position:fixed;inset:0;background:rgba(74,63,53,.38);display:flex;align-items:center;justify-content:center;padding:24px;z-index:50;animation:fade .15s;overflow-y:auto}
+.sheet{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow2);padding:20px;width:100%;max-width:360px;margin:auto}
 .sheet h3{margin:0 0 14px;font-size:17px}
 .sheet .row{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
 @keyframes fade{from{opacity:0}}
@@ -914,6 +914,7 @@ function bucketDisplayName(bucket,byId){ // 由 bucket 推导文件夹显示名
   if(b==='dish-gallery'||b.endsWith('-dish-gallery'))return nm?(nm+'待做'):'待做';
   if(b==='tl-reflect')return '反思集';
   if(b==='tl-salary')return '工资条';
+  if(b.indexOf('tlc-')===0)return byId[b.slice(4)]?byId[b.slice(4)].name:'时间轴项目';
   return '条目';
 }
 async function globalSearch(q){
@@ -949,8 +950,9 @@ async function globalSearch(q){
   for(const e of await DB.all('entries')){
     if(((e.title||'')+' '+(e.text||'')).toLowerCase().indexOf(q)>=0){
       const nm=bucketDisplayName(e.bucket,byId);
-      if(e.bucket==='tl-reflect'||e.bucket==='tl-salary'){
-        push({t:'条目',label:nm,date:e.tlDate||'',text:e.title||(e.text||''),go:()=>Router.go('timeline',{kind:e.bucket==='tl-salary'?'salary':'reflect'})});
+      if(e.bucket==='tl-reflect'||e.bucket==='tl-salary'||e.bucket.indexOf('tlc-')===0){
+        const kind=e.bucket==='tl-salary'?'salary':e.bucket==='tl-reflect'?'reflect':e.bucket.slice(4);
+        push({t:'条目',label:nm,date:e.tlDate||'',text:e.title||(e.text||''),go:()=>Router.go('timeline',{kind})});
         continue;
       }
       push({t:'条目',label:nm,date:e.createdAt?new Date(e.createdAt).toISOString().slice(0,10):'',text:e.title||(e.text||''),go:()=>Router.go('folder',{bucket:e.bucket,name:nm})});
@@ -1051,7 +1053,7 @@ Pages.home={
       if(seq!==searchSeq)return;
       renderSearchResults(grid,rows,q);
     });
-    const homeItems=items.filter(it=>!(it.kind==='inventory'||(it.kind==='custom'&&it.specKind==='inventory')));
+    const homeItems=items.filter(it=>!(it.kind==='inventory'||(it.kind==='custom'&&it.specKind==='inventory')||it.kind==='timeline'));
     if(!homeItems.length)grid.appendChild(h('<div class="empty" style="padding:20px">'+(homeManage?'点下方「＋ 新增事项」创建第一个事项':'点右上角「管理」开始使用')+'</div>'));
     for(const it of homeItems){
       const set=sets[it.id]||new Set();
@@ -1526,6 +1528,12 @@ async function renderSpec(host,item,topSlot,marked,aboveSlot){
         +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">注意事项</label><textarea class="textarea" id="sk-note" style="min-height:64px" placeholder="写点什么…">'+esc(rec.text||'')+'</textarea></div>'
         +'<div class="row">'+(isNew?'':'<button class="btn danger" data-x="del">删除</button>')+'<button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
       const m=modal(sheet);
+      // 注意事项文本框高度随内容自适应，直接显示全部文字、不滑动
+      const noteIn=sheet.querySelector('#sk-note');
+      noteIn.style.resize='none';
+      const skGrow=()=>{noteIn.style.height='auto';const bd=noteIn.offsetHeight-noteIn.clientHeight;noteIn.style.height=(noteIn.scrollHeight+bd)+'px';};
+      noteIn.addEventListener('input',skGrow);
+      setTimeout(skGrow,0);
       sheet.querySelector('[data-x="no"]').onclick=()=>closeModal(m);
       const delBtn=sheet.querySelector('[data-x="del"]');
       if(delBtn)delBtn.onclick=async()=>{
@@ -1550,9 +1558,9 @@ async function renderSpec(host,item,topSlot,marked,aboveSlot){
       const sks=(await DB.all('skills')).filter(s=>s.itemId===item.id).sort((a,b)=>((b.time||'').localeCompare(a.time||''))||((b.createdAt||0)-(a.createdAt||0)));
       if(!sks.length)listBox.appendChild(h('<div class="empty" style="padding:18px 10px">还没有'+esc(item.name)+'，点下方添加</div>'));
       for(const s of sks){
-        const row=h('<div class="listitem"><div class="li-main"><div class="li-title"></div><div class="li-sub"></div></div></div>');
-        row.querySelector('.li-title').textContent=(s.time?cnDay(s.time)+' · ':'')+s.title;
-        row.querySelector('.li-sub').textContent=s.text||'';
+        // 技能记录只显示名称（日期/注意事项进编辑页查看）
+        const row=h('<div class="listitem"><div class="li-main"><div class="li-title"></div></div></div>');
+        row.querySelector('.li-title').textContent=s.title;
         row.onclick=()=>openSkillForm(s);
         listBox.appendChild(row);
       }
@@ -1993,10 +2001,21 @@ Pages.folder={
     const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(p.name)+'</h1></div><div class="entlist"></div><button class="fab" title="新增">＋</button></div>');
     const list=el.querySelector('.entlist');
     if(!entries.length)list.appendChild(h('<div class="empty" style="padding-top:40px">还没有条目，点右下角 ＋ 添加</div>'));
+    let entIdx=0;
     for(const e of entries){
-      const en=h('<div class="ent"><div class="thumb"></div><div class="ebody"><div class="etitle"></div><div class="etext"></div><div class="eop"><button data-op="edit">编辑</button><button data-op="del" class="del">删除</button></div></div></div>');
+      entIdx++;
+      const tipNo=isTips?(entries.length-entIdx+1):0; // 小 Tip 编号：按创建顺序递增，列表新在上（编号从大到小）
+      const en=h(isTips
+        ?'<div class="ent"><div class="ebody"><div class="etitle" style="display:flex;align-items:baseline;gap:6px"><span class="eno" style="flex:none;font-size:13px;color:var(--ink2);font-weight:700"></span><span class="etn" style="flex:1;min-width:0"></span></div><div class="etext"></div></div></div>'
+        :'<div class="ent"><div class="thumb"></div><div class="ebody"><div class="etitle"></div><div class="etext"></div><div class="eop"><button data-op="edit">编辑</button><button data-op="del" class="del">删除</button></div></div></div>');
+      if(isTips){ // 小 Tip：编号+标题+内容摘要，不显示图片（图片进编辑页查看）
+        en.querySelector('.eno').textContent=tipNo+'.';
+        en.querySelector('.etn').textContent=e.title||'（无标题）';
+        en.querySelector('.etext').textContent=(e.text||'').slice(0,60);
+      }else{
       en.querySelector('.etitle').textContent=e.title||'（无标题）';
       en.querySelector('.etext').textContent=(e.text||'').slice(0,60);
+      }
       if(isGallery){ // 待做：每条记录即一条待办，标题前小方格，勾选划线保留，再点取消
         if(e.todos&&e.todos.length){ // 旧版多条待办数据迁移：合并回注意事项文本
           const extra=e.todos.map(x=>(x.t||'').trim()).filter(Boolean).join('\n');
@@ -2021,7 +2040,7 @@ Pages.folder={
           await DB.put('entries',e);
           drawTodo();
         };
-      }else{
+      }else if(!isTips){ // 非 gallery 非 tips：缩略图/占位
         const thumb=en.querySelector('.thumb');
         if(e.imageIds&&e.imageIds[0]){const im=h('<img alt="">');Img.attach(im,e.imageIds[0]);thumb.appendChild(im);}else thumb.textContent='📝';
       }
@@ -2650,23 +2669,42 @@ Pages.inventory={
 };
 
 /* ===== J5 时间轴（反思集 / 工资条）===== */
-const TL_KINDS={reflect:{name:'反思集',bucket:'tl-reflect',icon:'📝'},salary:{name:'工资条',bucket:'tl-salary',icon:'💰'}};
-function openTlForm(kind,existing){ // 新增/编辑时间轴记录：日期、时间（可选）、内容；工资条另有人工费
-  const K=TL_KINDS[kind];
+const TL_KINDS={reflect:{name:'反思集',bucket:'tl-reflect',icon:'📝',count:false,contentLabel:'记录内容'},salary:{name:'工资条',bucket:'tl-salary',icon:'💰',count:true,feeLabel:'人工费（元）',feePlaceholder:'如 120.00',statLabel:'本月工资',statPrefix:'¥',statHint:'按当月人工费合计自动统计',contentLabel:'内容（如 项目名称、工作内容）'}};
+async function getTlCfg(kind){ // kind='reflect'|'salary' 或自定义项目 itemId
+  if(TL_KINDS[kind])return TL_KINDS[kind];
+  const it=await DB.get('items',kind);
+  if(it&&it.kind==='timeline'){
+    const count=it.tlKind==='count';
+    return {name:it.name,bucket:'tlc-'+it.id,icon:count?'📊':'🗒️',count,
+      feeLabel:'数值',feePlaceholder:'如 120.00',statLabel:'本月合计',statPrefix:'',statHint:'按当月数值合计自动统计',
+      contentLabel:'记录内容',itemId:it.id,custom:true};
+  }
+  return null;
+}
+function chooseTlKind(){ // 新增时间轴项目：选择计数 / 不计数
+  return new Promise(resolve=>{
+    const opts=[{k:'nocount',label:'不计数',sub:'纯文字记录，像反思集'},{k:'count',label:'计数',sub:'每条记录含数值，自动按月合计'}];
+    const sheet=h('<div class="sheet"><h3>选择项目类型</h3><div style="display:flex;flex-direction:column;gap:8px">'+opts.map(x=>'<button class="btn specopt" data-k="'+x.k+'" style="flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px"><span style="font-size:15px;font-weight:600">'+x.label+'</span><span style="font-size:12px;color:var(--ink2)">'+x.sub+'</span></button>').join('')+'<button class="btn" id="ck-no">取消</button></div></div>');
+    const m=modal(sheet);
+    sheet.querySelector('#ck-no').onclick=()=>{closeModal(m);resolve(null);};
+    sheet.querySelectorAll('.specopt').forEach(b=>b.onclick=()=>{closeModal(m);resolve(b.dataset.k);});
+  });
+}
+function openTlForm(K,existing){ // 新增/编辑时间轴记录：日期、时间（可选）、内容；工资条另有人工费
   const isNew=!existing;
   const nowHM=()=>{const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
   const rec=existing||{id:uid(),bucket:K.bucket,title:'',text:'',fee:'',tlDate:todayKey(),tlTime:nowHM(),imageIds:[],createdAt:Date.now()};
   const sheet=h('<div class="sheet"><h3>'+(isNew?'新增'+K.name:'编辑'+K.name)+'</h3>'
     +'<div style="display:flex;gap:10px"><div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">日期</label><input type="date" class="input" id="tl-date"></div>'
     +'<div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">时间（可选）</label><input type="time" class="input" id="tl-time"></div></div>'
-    +(kind==='salary'?'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">人工费（元）</label><input type="number" min="0" step="0.01" class="input" id="tl-fee" placeholder="如 120.00"></div>':'')
-    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">'+(kind==='salary'?'内容（如 项目名称、工作内容）':'记录内容')+'</label><textarea class="textarea" id="tl-text" placeholder="随便写点什么…"></textarea></div>'
+    +(K.count?'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">'+K.feeLabel+'</label><input type="number" min="0" step="0.01" class="input" id="tl-fee" placeholder="'+K.feePlaceholder+'"></div>':'')
+    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">'+K.contentLabel+'</label><textarea class="textarea" id="tl-text" placeholder="随便写点什么…"></textarea></div>'
     +'<div class="row">'+(isNew?'':'<button class="btn danger" data-x="tldel" style="margin-right:auto">删除</button>')+'<button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
   const m=modal(sheet);
   sheet.querySelector('#tl-date').value=rec.tlDate||todayKey();
   sheet.querySelector('#tl-time').value=rec.tlTime||'';
   sheet.querySelector('#tl-text').value=rec.text||'';
-  if(kind==='salary')sheet.querySelector('#tl-fee').value=rec.fee!==''&&rec.fee!=null?rec.fee:'';
+  if(K.count)sheet.querySelector('#tl-fee').value=rec.fee!==''&&rec.fee!=null?rec.fee:'';
   const delBtn=sheet.querySelector('[data-x=tldel]');
   if(delBtn)delBtn.onclick=async()=>{
     const y=await confirmBox('删除这条'+K.name+'记录？',{danger:true,okText:'删除'});
@@ -2678,9 +2716,9 @@ function openTlForm(kind,existing){ // 新增/编辑时间轴记录：日期、�
     const tlTime=sheet.querySelector('#tl-time').value||'';
     const text=sheet.querySelector('#tl-text').value.trim();
     let fee='';
-    if(kind==='salary'){
+    if(K.count){
       fee=sheet.querySelector('#tl-fee').value;
-      if(fee!==''&&isNaN(parseFloat(fee))){toast('人工费请填数字');return;}
+      if(fee!==''&&isNaN(parseFloat(fee))){toast(K.feeLabel.replace(/（.*）/,'')+'请填数字');return;}
     }
     if(!text&&!(parseFloat(fee)>0)){toast('至少写点什么');return;}
     const out={id:rec.id,bucket:K.bucket,title:rec.title||'',text,fee,tlDate,tlTime,imageIds:[...(rec.imageIds||[])],createdAt:rec.createdAt||Date.now()};
@@ -2710,43 +2748,81 @@ Pages.timelineHub={ // 时间轴首页：反思集 / 工资条 两个项目（�
       li.onclick=()=>Router.go('timeline',{kind:r.kind});
       list.appendChild(li);
     }
+    // 自定义时间轴项目（计数/不计数）
+    const customs=(await DB.all('items')).filter(it=>it.kind==='timeline').sort((a,b)=>(a.order||0)-(b.order||0));
+    for(const it of customs){
+      const allE=await DB.byIndex('entries','bucket','tlc-'+it.id);
+      let sub;
+      if(it.tlKind==='count'){
+        const sum=allE.reduce((s,e)=>{return (e.tlDate||'').indexOf(ym)===0?s+(parseFloat(e.fee)||0):s;},0);
+        sub='本月合计 '+sum.toFixed(2).replace(/\.00$/,'');
+      }else sub=allE.length+' 条记录';
+      const li=h('<div class="invhubrow" style="--c:var(--'+(it.tlKind==='count'?'bean':'mist')+')"><div class="ih-main"><div class="ih-name hand">'+(it.tlKind==='count'?'📊':'🗒️')+' '+esc(it.name)+'</div><div class="ih-sub">'+sub+'</div></div><span class="ih-arrow">›</span></div>');
+      li.onclick=()=>Router.go('timeline',{kind:it.id});
+      bindLongPress(li,()=>{ // 长按自定义项目弹菜单：删除项目及其全部记录
+        const s2=h('<div class="sheet"><h3>'+esc(it.name)+'</h3><div style="display:flex;flex-direction:column;gap:10px"><button class="btn danger" data-m="del">🗑 删除项目</button><button class="btn" data-m="no">取消</button></div></div>');
+        const m2=modal(s2);
+        s2.querySelector('[data-m=no]').onclick=()=>closeModal(m2);
+        s2.querySelector('[data-m=del]').onclick=async()=>{
+          closeModal(m2);
+          const y=await confirmBox('删除「'+it.name+'」及其全部记录？',{danger:true,okText:'删除'});
+          if(!y)return;
+          for(const e of await DB.byIndex('entries','bucket','tlc-'+it.id))await DB.del('entries',e.id);
+          await DB.del('items',it.id);
+          toast('已删除');
+          Router.refresh();
+        };
+      });
+      list.appendChild(li);
+    }
+    const add=h('<button class="addtile">＋ 新增项目</button>');
+    add.onclick=async()=>{
+      const v=await promptBox('新增项目名称','',{placeholder:'如 运动里程、读书页数'});
+      if(!v)return;
+      const k=await chooseTlKind();
+      if(!k)return;
+      await DB.put('items',{id:uid(),name:v,kind:'timeline',tlKind:k,color:'sand',order:Date.now(),builtin:false});
+      toast('已创建「'+v+'」');
+      Router.refresh();
+    };
+    list.appendChild(add);
     // 右滑返回打卡页
     bindSwipeRight(el,()=>Router.go('home'));
     return el;
   }
 };
-Pages.timeline={ // 时间轴详情：左侧时间 + 竖向轴线 + 右侧内容；工资条页顶显示本月工资
+Pages.timeline={ // 时间轴详情：左侧时间 + 竖向轴线 + 右侧内容；计数项目页顶显示本月合计
   async render(p){
-    const kind=p&&p.kind==='salary'?'salary':'reflect';
-    const K=TL_KINDS[kind];
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+K.icon+' '+K.name+'</h1></div></div>');
+    let K=await getTlCfg(p&&p.kind);
+    if(!K)K=TL_KINDS.reflect;
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+K.icon+' '+esc(K.name)+'</h1></div></div>');
     let all=(await DB.byIndex('entries','bucket',K.bucket));
     all=all.sort((a,b)=>{
       const ka=(a.tlDate||'')+'T'+(a.tlTime||'')+'_'+(a.createdAt||0);
       const kb=(b.tlDate||'')+'T'+(b.tlTime||'')+'_'+(b.createdAt||0);
       return kb.localeCompare(ka); // 新的在上，上下滑动查看
     });
-    if(kind==='salary'){
+    if(K.count){
       const ym=todayKey().slice(0,7);
       const monthFee=all.reduce((s,e)=>{return (e.tlDate||'').indexOf(ym)===0?s+(parseFloat(e.fee)||0):s;},0);
-      const stat=h('<div class="tl-stat"><div class="lab">本月工资</div><div class="val">¥'+monthFee.toFixed(2).replace(/\.00$/,'')+'</div><span style="font-size:11.5px;color:var(--ink2)">按当月人工费合计自动统计</span></div>');
+      const stat=h('<div class="tl-stat"><div class="lab">'+K.statLabel+'</div><div class="val">'+K.statPrefix+monthFee.toFixed(2).replace(/\.00$/,'')+'</div><span style="font-size:11.5px;color:var(--ink2)">'+K.statHint+'</span></div>');
       el.appendChild(stat);
     }
     const list=h('<div class="tl-list"></div>');
-    if(!all.length)list.appendChild(h('<div class="empty" style="padding:30px 10px">还没有'+K.name+'记录<br>点右下角 ＋ 快速添加</div>'));
+    if(!all.length)list.appendChild(h('<div class="empty" style="padding:30px 10px">还没有'+esc(K.name)+'记录<br>点右下角 ＋ 快速添加</div>'));
     for(const e of all){
       const d=e.tlDate||'';
       const time=e.tlTime||'';
-      const item=h('<div class="tl-item"><div class="tl-time"><b></b><span></span></div><div class="tl-mid"><div class="tl-dot"></div></div><div class="tl-body"><span></span>'+(kind==='salary'&&parseFloat(e.fee)>0?'<div class="tl-fee">¥'+(Math.round(parseFloat(e.fee)*100)/100)+'</div>':'')+'</div></div>');
+      const item=h('<div class="tl-item"><div class="tl-time"><b></b><span></span></div><div class="tl-mid"><div class="tl-dot"></div></div><div class="tl-body"><span></span>'+(K.count&&parseFloat(e.fee)>0?'<div class="tl-fee">'+K.statPrefix+(Math.round(parseFloat(e.fee)*100)/100)+'</div>':'')+'</div></div>');
       item.querySelector('.tl-time b').textContent=d?d.slice(5):'';
       item.querySelector('.tl-time span').textContent=(d?d.slice(0,4):'')+(time?' '+time:'');
       item.querySelector('.tl-body span').textContent=e.text||'（无内容）';
-      item.onclick=()=>openTlForm(kind,e);
+      item.onclick=()=>openTlForm(K,e);
       list.appendChild(item);
     }
     el.appendChild(list);
     const fab=h('<button class="fab" title="快速添加">＋</button>');
-    fab.onclick=()=>openTlForm(kind,null);
+    fab.onclick=()=>openTlForm(K,null);
     el.appendChild(fab);
     return el;
   }
