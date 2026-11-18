@@ -1386,7 +1386,7 @@ async function renderSpec(host,item,topSlot,marked,aboveSlot){
     // 自定义模块使用独立文件夹（完全空白初始化，不共享固定模块内容）
     const bp=item.kind==='custom'?('c_'+item.id+'-'):'';
     [['inspiration','灵感收集','💡'],['tips','Tip','📝']].forEach(([b,name,ic])=>{
-      topBtn(ic,'打开 '+name,()=>Router.go('folder',{bucket:bp+'sew-'+b,name}));
+      topBtn(ic,'打开 '+name,()=>Router.go('folder',{bucket:bp+'sew-'+b,name,itemId:item.id}));
     });
     sp.textContent='';
   }else if(ek==='eat'){
@@ -1397,7 +1397,7 @@ async function renderSpec(host,item,topSlot,marked,aboveSlot){
     const feats=[
       {k:'weekStat',lab:'本周统计',go:()=>Router.go('weekStat',{itemId:item.id})},
       {k:'gallery',lab:'待做',go:()=>Router.go('folder',{bucket:bp+'dish-gallery',name:'待做',itemId:item.id})},
-      {k:'tips',lab:'Tip',go:()=>Router.go('folder',{bucket:bp+'eat-tips',name:'Tip'})},
+      {k:'tips',lab:'Tip',go:()=>Router.go('folder',{bucket:bp+'eat-tips',name:'Tip',itemId:item.id})},
       {k:'grocery',lab:'采购记录',go:()=>Router.go('grocery',{itemId:item.id})}
     ];
     if(item.kind!=='custom')feats.splice(2,0,{k:'fridge',lab:'食材库',go:()=>Router.go('fridge',{itemId:item.id})}); // 食材库排在待做之后（上一行），仅固定饮食模块生效
@@ -1620,10 +1620,23 @@ async function addModuleTagPool(itemId,tags){ // 把本模块用到的标签写�
   for(const t of (tags||[])){const k=(t||'').trim();if(k&&pool.indexOf(k)<0){pool.push(k);ch=true;}}
   if(ch)await DB.setSetting(key,pool);
 }
-async function moduleTagCands(itemId){ // 模块标签候选历史：本模块池优先，其后并入该模块菜名/待做来源
+async function migrateTagpoolNone(){ // 旧版 Tip/灵感收集漏传 itemId 时标签存进 tagpool_none，现并入饮食池
+  const old=await DB.getSetting('tagpool_none',[]);
+  if(!Array.isArray(old)||!old.length)return;
+  const its=(await DB.all('items')).filter(it=>it.name==='饮食');
+  const dietId=its.length?its[0].id:null;
+  await addModuleTagPool(dietId,old);
+  await DB.setSetting('tagpool_none',[]);
+}
+async function moduleTagCands(itemId){ // 模块标签候选历史：本模块池优先，其后并入该模块菜名/待做来源；本模块食材库的食材名一并入候选
   const pool=await getModuleTagPool(itemId);
   const extra=await allMealTags(itemId);
-  return [...pool,...extra.filter(t=>pool.indexOf(t)<0)];
+  const arr=[...pool,...extra.filter(t=>pool.indexOf(t)<0)];
+  if(itemId){ // 食材库联动：该模块在库食材（含历史区）的名字进入标签候选
+    const fs=await DB.byIndex('fridge','itemId',itemId);
+    for(const f of fs){const k=(f.name||'').trim();if(k&&arr.indexOf(k)<0)arr.push(k);}
+  }
+  return arr;
 }
 async function galleryDishTags(itemId){ // 图鉴条目的食材标签（与菜名标签共用历史）
   const item=itemId?await DB.get('items',itemId):null;
@@ -2140,6 +2153,7 @@ Pages.entryEditor={
     const sel=(entry.ing||[]).filter(Boolean);
     if(true){ // 食材标签：历史与搜索（同编辑菜名逻辑，共用历史记录）；所有条目类型均可添加标签（修复Tip 无法加标签）
       const itemId=p.itemId||null;
+      await migrateTagpoolNone(); // 旧版无模块池数据并入饮食池
       const histBox=el.querySelector('#en-hist'),selBox=el.querySelector('#en-sel'),resBox=el.querySelector('#en-searchres'),searchInp=el.querySelector('#en-search');
       let histCache=[];
       const chip=(label,onclick)=>{const c=h('<button type="button" class="tagchip"></button>');c.textContent=label;c.onclick=onclick;return c;};
@@ -2689,15 +2703,31 @@ Pages.inventory={
 };
 
 /* ===== J5 时间轴（反思集 / 工资条）===== */
-const TL_KINDS={reflect:{name:'反思集',bucket:'tl-reflect',icon:'📝',count:false,contentLabel:'记录内容'},salary:{name:'工资条',bucket:'tl-salary',icon:'💰',count:true,feeLabel:'人工费（元）',feePlaceholder:'如 120.00',statLabel:'本月工资',statPrefix:'¥',statHint:'按当月人工费合计自动统计',contentLabel:'内容（如 项目名称、工作内容）'}};
+const TL_KINDS={reflect:{name:'反思集',bucket:'tl-reflect',count:false,contentLabel:'记录内容'},salary:{name:'工资条',bucket:'tl-salary',count:true,feeLabel:'人工费（元）',feePlaceholder:'如 120.00',statLabel:'本月工资',statPrefix:'¥',statHint:'按当月人工费合计自动统计',contentLabel:'内容（如 项目名称、工作内容）'}};
+const TL_SELF_TAGS=['魅力值','生命值','幸福值','金币值','智力值'];
+async function ensureSelfTags(){ // 「投资自己」项目迁移：固定五标签；仅首次迁移时清除旧标签池与记录上的旧标签
+  const its=(await DB.all('items')).filter(it=>it.kind==='timeline'&&it.name==='投资自己');
+  for(const it of its){
+    if(it.statTags)continue; // 已迁移，跳过（避免每次渲染清空刚保存的标签）
+    await DB.put('items',Object.assign({},it,{statTags:TL_SELF_TAGS}));
+    await DB.setSetting('tltag_tlc-'+it.id,[]);
+    for(const e of await DB.byIndex('entries','bucket','tlc-'+it.id)){
+      if(e.tags&&e.tags.length)await DB.put('entries',Object.assign({},e,{tags:[]}));
+    }
+  }
+}
+function fmtSigned(v){ // 带符号数值：加分绿色、减分红色
+  const n=Math.round(v*100)/100;
+  return '<span style="color:var(--'+(n>=0?'ok':'danger')+')">'+(n>=0?'+':'-')+Math.abs(n)+'</span>';
+}
 async function getTlCfg(kind){ // kind='reflect'|'salary' 或自定义项目 itemId
   if(TL_KINDS[kind])return TL_KINDS[kind];
   const it=await DB.get('items',kind);
   if(it&&it.kind==='timeline'){
     const count=it.tlKind==='count';
-    return {name:it.name,bucket:'tlc-'+it.id,icon:count?'📊':'🗒️',count,
+    return {name:it.name,bucket:'tlc-'+it.id,count,
       feeLabel:'数值',feePlaceholder:'如 120.00',statLabel:'本月合计',statPrefix:'',statHint:'按当月数值合计自动统计',
-      contentLabel:'记录内容',itemId:it.id,custom:true};
+      contentLabel:'记录内容',itemId:it.id,custom:true,statTags:it.statTags||null};
   }
   return null;
 }
@@ -2717,20 +2747,31 @@ function openTlForm(K,existing){ // 新增/编辑时间轴记录：日期、时�
   const sheet=h('<div class="sheet"><h3>'+(isNew?'新增'+K.name:'编辑'+K.name)+'</h3>'
     +'<div style="display:flex;gap:10px"><div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">日期</label><input type="date" class="input" id="tl-date"></div>'
     +'<div style="flex:1"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">时间（可选）</label><input type="time" class="input" id="tl-time"></div></div>'
-    +(K.count?'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">'+K.feeLabel+'</label><input type="number" min="0" step="0.01" class="input" id="tl-fee" placeholder="'+K.feePlaceholder+'"></div>':'')
+    +(K.count?'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">'+K.feeLabel+'</label><input type="number" '+(K.statTags?'':'min="0" ')+'step="0.01" class="input" id="tl-fee" placeholder="'+(K.statTags?K.feePlaceholder+'（可输负数减分）':K.feePlaceholder)+'"></div>':'')
     +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">'+K.contentLabel+'</label><textarea class="textarea" id="tl-text" placeholder="随便写点什么…"></textarea></div>'
-    +'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">标签（点选添加，回车新建，仅编辑页可见）</label><div id="tl-thist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="tl-taginp" placeholder="输入标签，回车添加"><div id="tl-tsel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px;margin-top:6px"></div></div>'
+    +(K.statTags
+      ?'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">标签（点选分类，可多选）</label><div id="tl-tsel" style="display:flex;flex-wrap:wrap;gap:6px;min-height:26px"></div></div>'
+      :'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">标签（点选添加，回车新建，仅编辑页可见）</label><div id="tl-thist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="tl-taginp" placeholder="输入标签，回车添加"><div id="tl-tsel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px;margin-top:6px"></div></div>')
     +'<div class="row">'+(isNew?'':'<button class="btn danger" data-x="tldel" style="margin-right:auto">删除</button>')+'<button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
   const m=modal(sheet);
   sheet.querySelector('#tl-date').value=rec.tlDate||todayKey();
   sheet.querySelector('#tl-time').value=rec.tlTime||'';
   sheet.querySelector('#tl-text').value=rec.text||'';
-  // 标签：每条记录可加标签，历史池按项目（bucket）独立存放，互不互通
+  // 标签：每条记录可加标签，历史池按项目（bucket）独立存放，互不互通；固定标签项目（如投资自己）只能点选预设标签
   const tsel=(rec.tags||[]).filter(Boolean);
   const tKey='tltag_'+K.bucket;
   let tHist=[];
   function drawTags(){
     const selB=sheet.querySelector('#tl-tsel');selB.innerHTML='';
+    if(K.statTags){ // 固定五标签点选，无输入框、无历史池
+      K.statTags.forEach(t=>{
+        const on=tsel.indexOf(t)>=0;
+        const c=h('<button type="button" class="tagchip'+(on?' on':'')+'"></button>');c.textContent=t;
+        c.onclick=()=>{const i=tsel.indexOf(t);if(i>=0)tsel.splice(i,1);else tsel.push(t);drawTags();};
+        selB.appendChild(c);
+      });
+      return;
+    }
     if(!tsel.length)selB.appendChild(h('<span style="font-size:12px;color:var(--ink2)">未添加标签</span>'));
     tsel.forEach((t,i)=>{
       const c=h('<button type="button" class="tagchip on"></button>');c.textContent=t+' ×';
@@ -2746,7 +2787,8 @@ function openTlForm(K,existing){ // 新增/编辑时间轴记录：日期、时�
       hB.appendChild(c);
     });
   }
-  sheet.querySelector('#tl-taginp').addEventListener('keydown',e=>{
+  const taginp=sheet.querySelector('#tl-taginp');
+  if(taginp)taginp.addEventListener('keydown',e=>{
     if(e.key==='Enter'){
       e.preventDefault();
       const q=e.target.value.trim();
@@ -2754,8 +2796,9 @@ function openTlForm(K,existing){ // 新增/编辑时间轴记录：日期、时�
       e.target.value='';drawTags();
     }
   });
-  DB.getSetting(tKey,[]).then(v=>{tHist=Array.isArray(v)?v:[];drawTags();});
-  drawTags();
+  if(K.statTags)drawTags();
+  else DB.getSetting(tKey,[]).then(v=>{tHist=Array.isArray(v)?v:[];drawTags();});
+  if(!K.statTags)drawTags();
   if(K.count)sheet.querySelector('#tl-fee').value=rec.fee!==''&&rec.fee!=null?rec.fee:'';
   const delBtn=sheet.querySelector('[data-x=tldel]');
   if(delBtn)delBtn.onclick=async()=>{
@@ -2772,12 +2815,14 @@ function openTlForm(K,existing){ // 新增/编辑时间轴记录：日期、时�
       fee=sheet.querySelector('#tl-fee').value;
       if(fee!==''&&isNaN(parseFloat(fee))){toast(K.feeLabel.replace(/（.*）/,'')+'请填数字');return;}
     }
-    if(!text&&!(parseFloat(fee)>0)){toast('至少写点什么');return;}
+    if(!text&&!(fee!==''&&!isNaN(parseFloat(fee)))){toast('至少写点什么');return;}
     const out={id:rec.id,bucket:K.bucket,title:rec.title||'',text,fee,tlDate,tlTime,imageIds:[...(rec.imageIds||[])],tags:tsel.slice(),createdAt:rec.createdAt||Date.now()};
-    const tpool=await DB.getSetting(tKey,[]);
-    let tch=false;
-    for(const t of tsel){if(t&&tpool.indexOf(t)<0){tpool.push(t);tch=true;}}
-    if(tch)await DB.setSetting(tKey,tpool); // 标签写入本项目池（各项目独立）
+    if(!K.statTags){ // 固定标签项目不写标签池
+      const tpool=await DB.getSetting(tKey,[]);
+      let tch=false;
+      for(const t of tsel){if(t&&tpool.indexOf(t)<0){tpool.push(t);tch=true;}}
+      if(tch)await DB.setSetting(tKey,tpool); // 标签写入本项目池（各项目独立）
+    }
     await DB.put('entries',out);
     closeModal(m);
     toast(isNew?'已记录':'已保存');
@@ -2786,6 +2831,7 @@ function openTlForm(K,existing){ // 新增/编辑时间轴记录：日期、时�
 }
 Pages.timelineHub={ // 时间轴首页：反思集 / 工资条 两个项目（风格同图鉴列表）
   async render(){
+    await ensureSelfTags(); // 「投资自己」迁移：固定五标签并清旧标签记录
     const el=h('<div><div class="topbar stack"><h1 class="hand" style="font-size:19px">“把日子过成一条线”</h1><div class="tb-tools"><span class="sp"></span><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist" id="tlhub-list" style="padding-top:6px"></div></div>');
     el.querySelector('.topbar').after(hinvTabs('tl'));
     el.querySelector('[data-x=settings]').onclick=()=>Router.go('settings');
@@ -2800,7 +2846,7 @@ Pages.timelineHub={ // 时间轴首页：反思集 / 工资条 两个项目（�
     ];
     for(const r of rows){
       const K=TL_KINDS[r.kind];
-      const li=h('<div class="invhubrow" style="--c:var(--'+(r.kind==='salary'?'bean':'mist')+')"><div class="ih-main"><div class="ih-name hand">'+K.icon+' '+K.name+'</div><div class="ih-sub">'+r.sub+'</div></div><span class="ih-arrow">›</span></div>');
+      const li=h('<div class="invhubrow" style="--c:var(--'+(r.kind==='salary'?'bean':'mist')+')"><div class="ih-main"><div class="ih-name hand">'+K.name+'</div><div class="ih-sub">'+r.sub+'</div></div><span class="ih-arrow">›</span></div>');
       li.onclick=()=>Router.go('timeline',{kind:r.kind});
       list.appendChild(li);
     }
@@ -2809,11 +2855,15 @@ Pages.timelineHub={ // 时间轴首页：反思集 / 工资条 两个项目（�
     for(const it of customs){
       const allE=await DB.byIndex('entries','bucket','tlc-'+it.id);
       let sub;
-      if(it.tlKind==='count'){
+      if(it.statTags){
+        const monthE=allE.filter(e=>(e.tlDate||'').indexOf(ym)===0);
+        const sum=monthE.reduce((s,e)=>s+(parseFloat(e.fee)||0),0);
+        sub='本月投资自己合计 '+sum.toFixed(2).replace(/\.00$/,'');
+      }else if(it.tlKind==='count'){
         const sum=allE.reduce((s,e)=>{return (e.tlDate||'').indexOf(ym)===0?s+(parseFloat(e.fee)||0):s;},0);
         sub='本月合计 '+sum.toFixed(2).replace(/\.00$/,'');
       }else sub=allE.length+' 条记录';
-      const li=h('<div class="invhubrow" style="--c:var(--'+(it.tlKind==='count'?'bean':'mist')+')"><div class="ih-main"><div class="ih-name hand">'+(it.tlKind==='count'?'📊':'🗒️')+' '+esc(it.name)+'</div><div class="ih-sub">'+sub+'</div></div><span class="ih-arrow">›</span></div>');
+      const li=h('<div class="invhubrow" style="--c:var(--'+(it.tlKind==='count'?'bean':'mist')+')"><div class="ih-main"><div class="ih-name hand">'+esc(it.name)+'</div><div class="ih-sub">'+sub+'</div></div><span class="ih-arrow">›</span></div>');
       li.onclick=()=>Router.go('timeline',{kind:it.id});
       bindLongPress(li,()=>{ // 长按自定义项目弹菜单：删除项目及其全部记录
         const s2=h('<div class="sheet"><h3>'+esc(it.name)+'</h3><div style="display:flex;flex-direction:column;gap:10px"><button class="btn danger" data-m="del">🗑 删除项目</button><button class="btn" data-m="no">取消</button></div></div>');
@@ -2849,9 +2899,10 @@ Pages.timelineHub={ // 时间轴首页：反思集 / 工资条 两个项目（�
 };
 Pages.timeline={ // 时间轴详情：左侧时间 + 竖向轴线 + 右侧内容；计数项目页顶显示本月合计
   async render(p){
+    await ensureSelfTags(); // 「投资自己」迁移：固定五标签并清旧标签记录
     let K=await getTlCfg(p&&p.kind);
     if(!K)K=TL_KINDS.reflect;
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+K.icon+' '+esc(K.name)+'</h1></div></div>');
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+esc(K.name)+'</h1></div></div>');
     let all=(await DB.byIndex('entries','bucket',K.bucket));
     all=all.sort((a,b)=>{
       const ka=(a.tlDate||'')+'T'+(a.tlTime||'')+'_'+(a.createdAt||0);
@@ -2860,8 +2911,19 @@ Pages.timeline={ // 时间轴详情：左侧时间 + 竖向轴线 + 右侧内容
     });
     if(K.count){
       const ym=todayKey().slice(0,7);
-      const monthFee=all.reduce((s,e)=>{return (e.tlDate||'').indexOf(ym)===0?s+(parseFloat(e.fee)||0):s;},0);
-      const stat=h('<div class="tl-stat"><div class="lab">'+K.statLabel+'</div><div class="val">'+K.statPrefix+monthFee.toFixed(2).replace(/\.00$/,'')+'</div><span style="font-size:11.5px;color:var(--ink2)">'+K.statHint+'</span></div>');
+      const monthE=all.filter(e=>(e.tlDate||'').indexOf(ym)===0);
+      let stat;
+      if(K.statTags){ // 按标签分别统计：合计+各标签分项，加分绿/减分红
+        const total=monthE.reduce((s,e)=>s+(parseFloat(e.fee)||0),0);
+        const parts=K.statTags.map(t=>{
+          const v=monthE.filter(e=>(e.tags||[]).indexOf(t)>=0).reduce((s,e)=>s+(parseFloat(e.fee)||0),0);
+          return esc(t)+fmtSigned(v);
+        }).join('，');
+        stat=h('<div class="tl-stat" style="flex-wrap:wrap"><div class="lab" style="font-size:13px;line-height:2">本月'+esc(K.name)+'合计 '+fmtSigned(total)+'，其中 '+parts+'</div></div>');
+      }else{
+        const monthFee=monthE.reduce((s,e)=>s+(parseFloat(e.fee)||0),0);
+        stat=h('<div class="tl-stat"><div class="lab">'+K.statLabel+'</div><div class="val">'+K.statPrefix+monthFee.toFixed(2).replace(/\.00$/,'')+'</div><span style="font-size:11.5px;color:var(--ink2)">'+K.statHint+'</span></div>');
+      }
       el.appendChild(stat);
     }
     const list=h('<div class="tl-list"></div>');
@@ -2869,7 +2931,10 @@ Pages.timeline={ // 时间轴详情：左侧时间 + 竖向轴线 + 右侧内容
     for(const e of all){
       const d=e.tlDate||'';
       const time=e.tlTime||'';
-      const item=h('<div class="tl-item"><div class="tl-time"><b></b><span></span></div><div class="tl-mid"><div class="tl-dot"></div></div><div class="tl-body"><span></span>'+(K.count&&parseFloat(e.fee)>0?'<div class="tl-fee">'+K.statPrefix+(Math.round(parseFloat(e.fee)*100)/100)+'</div>':'')+'</div></div>');
+      const feeHtml=K.statTags
+        ?((parseFloat(e.fee)||0)!==0?'<div class="tl-fee">'+fmtSigned(parseFloat(e.fee))+'</div>':'')
+        :(K.count&&parseFloat(e.fee)>0?'<div class="tl-fee">'+K.statPrefix+(Math.round(parseFloat(e.fee)*100)/100)+'</div>':'');
+      const item=h('<div class="tl-item"><div class="tl-time"><b></b><span></span></div><div class="tl-mid"><div class="tl-dot"></div></div><div class="tl-body"><span></span>'+feeHtml+'</div></div>');
       item.querySelector('.tl-time b').textContent=d?d.slice(5):'';
       item.querySelector('.tl-time span').textContent=(d?d.slice(0,4):'')+(time?' '+time:'');
       item.querySelector('.tl-body span').textContent=e.text||'（无内容）';
