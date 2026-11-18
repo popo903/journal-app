@@ -2704,11 +2704,14 @@ Pages.inventory={
 
 /* ===== J5 时间轴（反思集 / 工资条）===== */
 const TL_KINDS={reflect:{name:'反思集',bucket:'tl-reflect',count:false,contentLabel:'记录内容'},salary:{name:'工资条',bucket:'tl-salary',count:true,feeLabel:'人工费（元）',feePlaceholder:'如 120.00',statLabel:'本月工资',statPrefix:'¥',statHint:'按当月人工费合计自动统计',contentLabel:'内容（如 项目名称、工作内容）'}};
-const TL_SELF_TAGS=['魅力值','生命值','幸福值','金币值','智力值'];
+const TL_SELF_TAGS=['魅力值','生命值','幸福值','金币值','智力值','经验值'];
 async function ensureSelfTags(){ // 「投资自己」项目迁移：固定五标签；仅首次迁移时清除旧标签池与记录上的旧标签
   const its=(await DB.all('items')).filter(it=>it.kind==='timeline'&&it.name==='投资自己');
   for(const it of its){
-    if(it.statTags)continue; // 已迁移，跳过（避免每次渲染清空刚保存的标签）
+    if(it.statTags){ // 已迁移：仅补齐新增的固定标签（不清记录，不影响已有统计）
+      if(TL_SELF_TAGS.some(t=>it.statTags.indexOf(t)<0))await DB.put('items',Object.assign({},it,{statTags:TL_SELF_TAGS}));
+      continue;
+    }
     await DB.put('items',Object.assign({},it,{statTags:TL_SELF_TAGS}));
     await DB.setSetting('tltag_tlc-'+it.id,[]);
     for(const e of await DB.byIndex('entries','bucket','tlc-'+it.id)){
