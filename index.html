@@ -1628,6 +1628,24 @@ async function migrateTagpoolNone(){ // 旧版 Tip/灵感收集漏传 itemId 时
   await addModuleTagPool(dietId,old);
   await DB.setSetting('tagpool_none',[]);
 }
+async function cleanTagpoolCross(){ // 一次性清洗历史脏数据：剔除非饮食模块标签池中与饮食食材重复的词（如五花肉、香菇）
+  const flag=await DB.getSetting('tagpool_cross_cleaned',false);
+  if(flag)return;
+  const its=await DB.all('items');
+  const diet=its.find(it=>it.name==='饮食');
+  const dietId=diet?diet.id:null;
+  const foodWords=[];
+  const addWord=t=>{const k=(t||'').trim();if(k&&foodWords.indexOf(k)<0)foodWords.push(k);};
+  for(const t of await allMealTags(dietId))addWord(t);
+  for(const t of await getModuleTagPool(dietId))addWord(t);
+  for(const it of its){
+    if(it.id===dietId||it.kind==='eat'||it.kind==='timeline')continue; // 饮食自身与时间轴固定标签项目不清洗
+    const pool=await getModuleTagPool(it.id);
+    const cleaned=pool.filter(t=>foodWords.indexOf(t)<0);
+    if(cleaned.length!==pool.length)await DB.setSetting('tagpool_'+it.id,cleaned);
+  }
+  await DB.setSetting('tagpool_cross_cleaned',true);
+}
 async function moduleTagCands(itemId){ // 模块标签候选历史：本模块池优先，其后并入该模块菜名/待做来源；本模块食材库的食材名一并入候选
   const pool=await getModuleTagPool(itemId);
   const extra=await allMealTags(itemId);
@@ -2130,18 +2148,22 @@ Pages.entryEditor={
     const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand">'+(isNew?'新增':'编辑')+' · '+esc(bucketName)+'</h1></div><div class="editor"><div class="field"><label>'+(isGallery?'待办事项（标题）':'标题')+'</label><input class="input" placeholder="'+(isGallery?'要做的一道菜/一件事':'给这条起个名字')+'"></div>'+(isGallery
       ?'<div class="field"><label>注意事项</label><textarea class="textarea" id="en-note" placeholder="做法要点、注意事项…"></textarea></div>'
       :'<div class="field"><label>内容</label><textarea class="textarea" placeholder="随便写点什么…"></textarea></div><div class="field"><label>图片（最多 3 张）</label><div></div></div>')
-      +'<div class="field"><label>'+(isGallery?'食材标签（点选添加，与添加菜名共用历史）':'标签（点选添加，回车新建）')+'</label><div id="en-hist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="en-search" placeholder="输入首字搜索标签，回车直接添加" style="margin-bottom:6px"><div id="en-searchres" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><div id="en-sel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px"></div></div><div class="btnrow"><button class="btn" data-x="back">取消</button><button class="btn primary" data-x="save">保存</button></div></div></div>');
+      +'<div class="field"><label>'+(isGallery?'食材标签（点选添加，与添加菜名共用历史）':'标签（点选添加，回车新建）')+'</label><div id="en-hist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="en-search" placeholder="输入首字搜索标签，回车直接添加" style="margin-bottom:6px"><div id="en-searchres" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><div id="en-sel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px"></div></div>'
+      +((/^eat-tips$|-eat-tips$/.test(entry.bucket||p.bucket||''))?'<div class="field"><label>反馈</label><textarea class="textarea" id="en-feedback" placeholder="执行后的感受、效果反馈…" style="min-height:64px"></textarea></div>':'')
+      +'<div class="btnrow"><button class="btn" data-x="back">取消</button><button class="btn primary" data-x="save">保存</button></div></div></div>');
     const titleIn=el.querySelector('.input');titleIn.value=entry.title||'';
+    const fbIn=el.querySelector('#en-feedback');if(fbIn)fbIn.value=entry.feedback||''; // Tip 反馈回填
     const textIn=el.querySelector('textarea');if(textIn)textIn.value=entry.text||'';
     if(textIn){ // 内容文本框高度随内容自适应，直接显示全部文字，无需内部滚动
       textIn.style.resize='none';
-      const autoGrow=()=>{ // 动态补偿上下边框高度，避免 box-sizing 差值导致内部微滚动
+      const autoGrow=()=>{ // 元素挂载前 offsetHeight=0 会导致计算不准，等待挂载后再量（避免打开长内容时需内部滑动）
+        if(!textIn.isConnected){requestAnimationFrame(autoGrow);return;}
         textIn.style.height='auto';
         const bd=textIn.offsetHeight-textIn.clientHeight;
         textIn.style.height=(textIn.scrollHeight+bd)+'px';
       };
       textIn.addEventListener('input',autoGrow);
-      setTimeout(autoGrow,0);
+      requestAnimationFrame(autoGrow);
     }
     if(isGallery){ // 旧版多条待办数据迁移：合并回注意事项文本
       if(entry.todos&&entry.todos.length){
@@ -2154,6 +2176,7 @@ Pages.entryEditor={
     if(true){ // 食材标签：历史与搜索（同编辑菜名逻辑，共用历史记录）；所有条目类型均可添加标签（修复Tip 无法加标签）
       const itemId=p.itemId||null;
       await migrateTagpoolNone(); // 旧版无模块池数据并入饮食池
+      await cleanTagpoolCross(); // 一次性清洗其他模块池中混入的饮食食材词
       const histBox=el.querySelector('#en-hist'),selBox=el.querySelector('#en-sel'),resBox=el.querySelector('#en-searchres'),searchInp=el.querySelector('#en-search');
       let histCache=[];
       const chip=(label,onclick)=>{const c=h('<button type="button" class="tagchip"></button>');c.textContent=label;c.onclick=onclick;return c;};
@@ -2210,6 +2233,8 @@ Pages.entryEditor={
       entry.createdAt=entry.createdAt||Date.now();
       const out={id:entry.id,bucket:entry.bucket||p.bucket,title:entry.title,text:entry.text,imageIds:[...(entry.imageIds||[])],createdAt:entry.createdAt};
       out.ing=[...sel]; // 标签对所有条目类型生效（Tip 等）
+      const fbIn=el.querySelector('#en-feedback'); // Tip 条目：反馈字段（标签下方）
+      if(fbIn)out.feedback=fbIn.value;
       await addModuleTagPool(p.itemId||null,out.ing); // 写入本模块标签池（各模块独立存放）
       if(isGallery)out.done=entry.done||false; // 待做：done 记录勾选状态
       await DB.put('entries',out);
@@ -2757,6 +2782,20 @@ function openTlForm(K,existing){ // 新增/编辑时间轴记录：日期、时�
       :'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">标签（点选添加，回车新建，仅编辑页可见）</label><div id="tl-thist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="tl-taginp" placeholder="输入标签，回车添加"><div id="tl-tsel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px;margin-top:6px"></div></div>')
     +'<div class="row">'+(isNew?'':'<button class="btn danger" data-x="tldel" style="margin-right:auto">删除</button>')+'<button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
   const m=modal(sheet);
+  if(existing){ // 双击复制：快速点两下记录（第二击落在弹窗遮罩上）= 仅日期改为今天直接复制，无需进长按菜单
+    const copyNow=()=>{
+      closeModal(m);
+      const c={id:uid(),bucket:K.bucket,title:existing.title||'',text:existing.text||'',fee:existing.fee||'',tlDate:todayKey(),tlTime:existing.tlTime||'',imageIds:[],tags:[...(existing.tags||[])],createdAt:Date.now()};
+      DB.put('entries',c).then(()=>{toast('已复制到今天，可点击编辑调整内容');Router.refresh();});
+    };
+    m.ondblclick=e=>{if(e.target===m)copyNow();}; // 桌面双击遮罩空白处
+    let lastTap=0; // 移动端双击兜底（部分浏览器双击缩放会吞 dblclick）
+    m.addEventListener('touchend',ev=>{
+      const t=Date.now();
+      if(t-lastTap<350&&ev.target===m){ev.preventDefault();copyNow();}
+      lastTap=t;
+    });
+  }
   sheet.querySelector('#tl-date').value=rec.tlDate||todayKey();
   sheet.querySelector('#tl-time').value=rec.tlTime||'';
   sheet.querySelector('#tl-text').value=rec.text||'';
@@ -3729,7 +3768,7 @@ Pages.bookDetail={
   async render(p){
     const book=await DB.get('books',p.id);
     if(!book){Router.back();return h('<div></div>');}
-    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand" id="bd-title"></h1><button class="iconbtn" id="bd-del" title="删除">🗑</button></div><div style="padding:4px 16px 40px"><div style="display:flex;gap:14px;align-items:flex-start"><div id="bd-coverbox" style="flex:none"></div><div style="flex:1;min-width:0"><button class="btn" id="bd-status" style="margin:6px 0"></button><div class="stars" style="margin:8px 0" id="bd-stars"></div></div></div><div class="cal" id="bd-borrow" style="margin:14px 0 4px;padding:10px 14px;display:flex;align-items:center;gap:10px"><span style="flex:none;font-size:18px">📚</span><div style="flex:1;min-width:0"><div style="font-size:12.5px;color:var(--ink2)">借阅到期（借的书可设置还书日期）</div><div id="bd-borrow-val" style="font-size:14px;color:var(--ink2)">未借阅</div></div><button class="btn" id="bd-borrow-set" style="padding:6px 12px;font-size:12.5px;flex:none">设置</button></div><div class="cal" id="bd-rt" style="margin:14px 0 4px"><div class="cal-head"><div class="cal-title">今日阅读</div><div id="bd-rt-total" style="font-size:13px;color:var(--ink2)"></div></div><div id="bd-rt-info" style="font-size:12.5px;color:var(--ink2);margin:2px 0 8px"></div><div id="bd-rt-list"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="bd-rt-start">开始计时</button><button class="btn" id="bd-rt-add">补录时长</button></div><div style="display:flex;gap:8px;align-items:center;margin-top:10px"><input class="input" id="bd-page" type="number" min="0" placeholder="读到第几页" style="flex:1"><button class="btn" id="bd-page-save">保存页数</button><span class="saved" id="bd-page-saved">已保存</span></div><div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><label style="font-size:12.5px;color:var(--ink2);display:block;margin-bottom:5px">今日摘抄</label><textarea class="textarea" id="bd-excerpt" rows="3" placeholder="写下今天读到的句子…" style="min-height:64px"></textarea><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button class="btn primary" id="bd-excerpt-save">保存摘抄</button><span class="saved" id="bd-ex-saved">已保存</span></div></div><div id="bd-history" style="margin-top:12px;border-top:1px solid var(--line);padding-top:8px"></div></div><div id="bd-fields" style="margin:14px 0 4px"></div><div id="bd-tags" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:2px 2px 12px;border-bottom:1px solid var(--line)"></div><div class="field"><label>简介</label><textarea class="textarea" id="bd-intro" rows="6" placeholder="图书简介…"></textarea></div><div class="field"><label>所思</label><textarea class="textarea" id="bd-review" rows="8" placeholder="写点什么…"></textarea></div><div class="field"><label>粘贴图书信息自动识别（支持豆瓣等复制内容）</label><textarea class="textarea" id="bd-paste" rows="5" placeholder="把复制的图书信息粘贴到这里，点下方按钮自动识别作者、译者、出版社、页数、简介"></textarea><button class="btn primary" id="bd-parse" style="margin-top:8px">识别并填充</button></div></div></div>');
+    const el=h('<div><div class="topbar"><button class="iconbtn" data-act="back">←</button><h1 class="hand" id="bd-title"></h1><button class="iconbtn" id="bd-del" title="删除">🗑</button></div><div style="padding:4px 16px 40px"><div style="display:flex;gap:14px;align-items:flex-start"><div id="bd-coverbox" style="flex:none"></div><div style="flex:1;min-width:0"><button class="btn" id="bd-status" style="margin:6px 0"></button><div class="stars" style="margin:8px 0" id="bd-stars"></div></div></div><div class="cal" id="bd-borrow" style="margin:14px 0 4px;padding:10px 14px;display:flex;align-items:center;gap:10px"><span style="flex:none;font-size:18px">📚</span><div style="flex:1;min-width:0"><div style="font-size:12.5px;color:var(--ink2)">借阅到期（借的书可设置还书日期）</div><div id="bd-borrow-val" style="font-size:14px;color:var(--ink2)">未借阅</div></div><button class="btn" id="bd-borrow-set" style="padding:6px 12px;font-size:12.5px;flex:none">设置</button></div><div class="cal" id="bd-rt" style="margin:14px 0 4px"><div class="cal-head"><div class="cal-title">今日阅读</div><div id="bd-rt-total" style="font-size:13px;color:var(--ink2)"></div></div><div id="bd-rt-info" style="font-size:12.5px;color:var(--ink2);margin:2px 0 8px"></div><div id="bd-rt-list"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="bd-rt-start">开始计时</button><button class="btn" id="bd-rt-add">补录时长</button></div><div style="display:flex;gap:8px;align-items:center;margin-top:10px"><input class="input" id="bd-page" type="number" min="0" placeholder="读到第几页" style="flex:1"><button class="btn" id="bd-page-save">保存页数</button><span class="saved" id="bd-page-saved">已保存</span></div><div style="display:flex;gap:8px;align-items:center;margin-top:10px"><input class="input" id="bd-chapter" type="text" placeholder="读到第几章 / 章节名称" style="flex:1"><button class="btn" id="bd-chapter-save">保存章节</button><span class="saved" id="bd-chapter-saved">已保存</span></div><div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><label style="font-size:12.5px;color:var(--ink2);display:block;margin-bottom:5px">今日摘抄</label><textarea class="textarea" id="bd-excerpt" rows="3" placeholder="写下今天读到的句子…" style="min-height:64px"></textarea><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button class="btn primary" id="bd-excerpt-save">保存摘抄</button><span class="saved" id="bd-ex-saved">已保存</span></div></div><div id="bd-history" style="margin-top:12px;border-top:1px solid var(--line);padding-top:8px"></div></div><div id="bd-fields" style="margin:14px 0 4px"></div><div id="bd-tags" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:2px 2px 12px;border-bottom:1px solid var(--line)"></div><div class="field"><label>简介</label><textarea class="textarea" id="bd-intro" rows="6" placeholder="图书简介…"></textarea></div><div class="field"><label>所思</label><textarea class="textarea" id="bd-review" rows="8" placeholder="写点什么…"></textarea></div><div class="field"><label>粘贴图书信息自动识别（支持豆瓣等复制内容）</label><textarea class="textarea" id="bd-paste" rows="5" placeholder="把复制的图书信息粘贴到这里，点下方按钮自动识别作者、译者、出版社、页数、简介"></textarea><button class="btn primary" id="bd-parse" style="margin-top:8px">识别并填充</button></div></div></div>');
     el.querySelector('#bd-title').textContent=book.title;
     // 封面
     const coverbox=el.querySelector('#bd-coverbox');
@@ -3906,6 +3945,16 @@ Pages.bookDetail={
       if(!n||n<=0){toast('请填写页数');return;}
       book.currentPage=n;await DB.put('books',book);
       const sv=el.querySelector('#bd-page-saved');sv.classList.add('show');setTimeout(()=>sv.classList.remove('show'),1500);
+    };
+    // 读到第几章 / 章节名称（存 book.currentChapter，位于保存页数行下方）
+    const chapInp=el.querySelector('#bd-chapter');
+    chapInp.value=book.currentChapter||'';
+    el.querySelector('#bd-chapter-save').onclick=async()=>{
+      const v=chapInp.value.trim();
+      book.currentChapter=v;
+      await DB.put('books',book);
+      const sv=el.querySelector('#bd-chapter-saved');sv.classList.add('show');setTimeout(()=>sv.classList.remove('show'),1500);
+      toast(v?'已保存章节':'已清空章节');
     };
     bdRtRedraw();
     // 图书信息字段：默认仅 作者/完成日期；可自定义添加字段，字段可重命名/删除
