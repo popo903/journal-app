@@ -2782,20 +2782,6 @@ function openTlForm(K,existing){ // 新增/编辑时间轴记录：日期、时�
       :'<div style="margin:10px 0"><label style="display:block;font-size:12.5px;color:var(--ink2);margin-bottom:4px">标签（点选添加，回车新建，仅编辑页可见）</label><div id="tl-thist" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div><input class="input" id="tl-taginp" placeholder="输入标签，回车添加"><div id="tl-tsel" style="display:flex;flex-wrap:wrap;gap:4px;min-height:26px;margin-top:6px"></div></div>')
     +'<div class="row">'+(isNew?'':'<button class="btn danger" data-x="tldel" style="margin-right:auto">删除</button>')+'<button class="btn" data-x="no">取消</button><button class="btn primary" data-x="ok">保存</button></div></div>');
   const m=modal(sheet);
-  if(existing){ // 双击复制：快速点两下记录（第二击落在弹窗遮罩上）= 仅日期改为今天直接复制，无需进长按菜单
-    const copyNow=()=>{
-      closeModal(m);
-      const c={id:uid(),bucket:K.bucket,title:existing.title||'',text:existing.text||'',fee:existing.fee||'',tlDate:todayKey(),tlTime:existing.tlTime||'',imageIds:[],tags:[...(existing.tags||[])],createdAt:Date.now()};
-      DB.put('entries',c).then(()=>{toast('已复制到今天，可点击编辑调整内容');Router.refresh();});
-    };
-    m.ondblclick=e=>{if(e.target===m)copyNow();}; // 桌面双击遮罩空白处
-    let lastTap=0; // 移动端双击兜底（部分浏览器双击缩放会吞 dblclick）
-    m.addEventListener('touchend',ev=>{
-      const t=Date.now();
-      if(t-lastTap<350&&ev.target===m){ev.preventDefault();copyNow();}
-      lastTap=t;
-    });
-  }
   sheet.querySelector('#tl-date').value=rec.tlDate||todayKey();
   sheet.querySelector('#tl-time').value=rec.tlTime||'';
   sheet.querySelector('#tl-text').value=rec.text||'';
@@ -2981,6 +2967,22 @@ Pages.timeline={ // 时间轴详情：左侧时间 + 竖向轴线 + 右侧内容
       item.querySelector('.tl-time span').textContent=(d?d.slice(0,4):'')+(time?' '+time:'');
       item.querySelector('.tl-body span').textContent=e.text||'（无内容）';
       item.onclick=()=>openTlForm(K,e);
+      const timeBox=item.querySelector('.tl-time'); // 双击时间区域：直接复制该条到今天，日期与时间均改为当前时间；单击时间区域不打开编辑
+      timeBox.title='双击复制该条（改为当前时间）';
+      timeBox.onclick=ev=>ev.stopPropagation();
+      const copyToNow=()=>{
+        const now=new Date();
+        const hm=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+        const c={id:uid(),bucket:K.bucket,title:e.title||'',text:e.text||'',fee:e.fee||'',tlDate:todayKey(),tlTime:hm,imageIds:[],tags:[...(e.tags||[])],createdAt:Date.now()};
+        DB.put('entries',c).then(()=>{toast('已复制到今天 '+hm);Router.refresh();});
+      };
+      timeBox.ondblclick=ev=>{ev.stopPropagation();copyToNow();};
+      let tlLastTap=0; // 移动端双击兜底（部分浏览器双击缩放会吞 dblclick）
+      timeBox.addEventListener('touchend',ev=>{
+        const t=Date.now();
+        if(t-tlLastTap<350){ev.preventDefault();ev.stopPropagation();copyToNow();}
+        tlLastTap=t;
+      });
       bindLongPress(item,()=>{ // 长按记录弹菜单：编辑 / 复制到今天 / 删除
         const s2=h('<div class="sheet"><h3>'+esc(K.name)+'记录</h3><div style="display:flex;flex-direction:column;gap:10px"><button class="btn" data-m="edit">✏ 编辑</button><button class="btn" data-m="copy">📋 复制到今天</button><button class="btn danger" data-m="del">🗑 删除</button><button class="btn" data-m="no">取消</button></div></div>');
         const m2=modal(s2);
