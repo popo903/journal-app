@@ -28,7 +28,7 @@ body::before{content:'';position:fixed;inset:0;z-index:-1;background:url("data:i
     radial-gradient(120% 90% at 12% 0%, rgba(255,255,255,.30), rgba(255,255,255,0) 42%),
     radial-gradient(80% 60% at 88% 8%, rgba(255,255,255,.14), rgba(255,255,255,0) 55%),
     linear-gradient(155deg, rgba(255,255,255,.11) 0%, rgba(255,255,255,0) 30%, rgba(255,255,255,0) 72%, rgba(255,255,255,.06) 100%),
-    linear-gradient(135deg, rgba(255,255,255,.30), rgba(190,172,136,.32) 45%, rgba(190,172,136,.24))!important;
+    linear-gradient(135deg, rgba(255,255,255,.30), rgba(245,230,224,.50) 45%, rgba(245,230,224,.40))!important;
   backdrop-filter:blur(18px) saturate(1.6) brightness(1.04)!important;
   -webkit-backdrop-filter:blur(18px) saturate(1.6) brightness(1.04)!important;
   border:1px solid rgba(255,255,255,.85)!important;
@@ -42,7 +42,7 @@ body::before{content:'';position:fixed;inset:0;z-index:-1;background:url("data:i
 }
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;touch-action:manipulation}
 input,textarea,select{font:inherit;color:var(--ink)}
-.hand{font-family:'Kaiti SC','STKaiti','KaiTi','DFKai-SB','楷体','Noto Serif SC',serif}
+.hand{font-family:"LikeJianJianTi",'Kaiti SC','STKaiti','KaiTi',serif}
 
 /* ===== S2 通用组件 ===== */
 .topbar{display:flex;align-items:center;gap:8px;padding:14px 16px 8px}
@@ -208,6 +208,23 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .invhubrow .ih-main{flex:1;min-width:0}
 .invhubrow .ih-name{font-size:15.5px;font-weight:600;color:var(--ink)}
 .invhubrow .ih-sub{font-size:12.5px;color:var(--ink2);margin-top:2px}
+/* 打卡/图鉴/时间轴三页字体统一大一号 */
+.bigfont .ih-name{font-size:17px}
+.bigfont .ih-sub{font-size:14px}
+.bigfont .liname{font-size:18.5px}
+.bigfont .list{font-size:14px}
+.bigfont .hcard .nm{font-size:20.5px}
+.bigfont .hcard .st{font-size:14px}
+.bigfont .goal .ghead{font-size:14.5px}
+.bigfont .goal .gtext{font-size:16.5px}
+.bigfont .goal .goal-row input{font-size:16.5px}
+.bigfont .gleft{font-size:14px}
+.bigfont .cal-title{font-size:18px}
+.bigfont .cal-weekrow span{font-size:13px}
+.bigfont .cal-days button{font-size:16px}
+.bigfont .listitem .li-title{font-size:17px}
+.bigfont .listitem .li-sub{font-size:14px}
+.bigfont .empty{font-size:15px}
 .invhubrow .ih-arrow{color:var(--ink2);font-size:18px}
 /* ===== 打卡⇄图鉴滑动切换开关 ===== */
 .hinv-tabs{display:flex;justify-content:center;gap:36px;margin-top:4px}
@@ -831,6 +848,7 @@ const Router=(()=>{
     try{
       const top=stack[stack.length-1];
       const el=await Pages[top.page].render(top.params||{});
+      if(top.page==='home'||top.page==='inventoryHome'||top.page==='timelineHub')el.classList.add('bigfont'); // 打卡/图鉴/时间轴三页字体大一号
       const v=$('#view');
       v.innerHTML='';v.appendChild(el);
       window.scrollTo(0,0);
