@@ -42,7 +42,7 @@ body::before{content:'';position:fixed;inset:0;z-index:-1;background:url("data:i
 }
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;touch-action:manipulation}
 input,textarea,select{font:inherit;color:var(--ink)}
-.hand{font-family:"LikeJianJianTi",'Kaiti SC','STKaiti','KaiTi',serif}
+.hand{font-family:'Kaiti SC','STKaiti','KaiTi','DFKai-SB','楷体','Noto Serif SC',"LikeJianJianTi",serif}
 
 /* ===== S2 通用组件 ===== */
 .topbar{display:flex;align-items:center;gap:8px;padding:14px 16px 8px}
@@ -1069,7 +1069,7 @@ Pages.home={
       el.addEventListener('pointerleave',cancel);
       el.addEventListener('pointercancel',cancel);
     }
-    const el=h('<div><div class="topbar stack"><h1 class="hand" style="font-size:19px">“习惯可以暂停，不能终止”</h1><div class="tb-tools"><button class="iconbtn" data-x="search" title="搜索"><svg viewBox="0 0 32 32" width="19" height="19" aria-hidden="true"><path fill="currentColor" d="M6.368 6.368a11.48 11.48 0 0 1 9.585-3.274L15 3.42a2.2 2.2 0 0 0-.92.59a10.46 10.46 0 0 0-7.005 3.065c-4.1 4.1-4.1 10.75 0 14.85s10.75 4.1 14.85 0a10.45 10.45 0 0 0 2.794-5.018q.112.116.241.213c.201.14.427.239.664.292a11.44 11.44 0 0 1-2.648 4.858l6.876 6.877a.5.5 0 0 1-.707.707l-6.876-6.877c-4.512 4.14-11.528 4.027-15.9-.345c-4.492-4.491-4.492-11.773 0-16.264M25.982 10a.36.36 0 0 1 .342.242l.298.918a1.9 1.9 0 0 0 1.2 1.197l.917.3l.019.003a.363.363 0 0 1 0 .684l-.918.299a1.9 1.9 0 0 0-1.2 1.197l-.298.918a.362.362 0 0 1-.684 0l-.299-.918a1.9 1.9 0 0 0-1.198-1.202l-.919-.298a.364.364 0 0 1-.175-.552a.36.36 0 0 1 .175-.132l.92-.299a1.9 1.9 0 0 0 1.179-1.197l.299-.918a.36.36 0 0 1 .34-.242M20.466 0a.665.665 0 0 1 .627.443l.547 1.683a3.47 3.47 0 0 0 2.198 2.196l1.684.547l.034.008a.666.666 0 0 1 0 1.254l-1.685.547a3.47 3.47 0 0 0-2.197 2.196l-.548 1.683l-.016.04a.666.666 0 0 1-1.238-.04l-.548-1.683a3.47 3.47 0 0 0-2.197-2.204l-1.684-.547A.67.67 0 0 1 15 5.496a.665.665 0 0 1 .444-.627l1.684-.547a3.47 3.47 0 0 0 2.15-2.154l.56-1.725a.665.665 0 0 1 .63-.443"/></svg></button><input type="search" id="home-search" class="input" placeholder="搜索全部记录…" style="flex:1;min-width:0;padding:8px 12px;border-radius:999px;font-size:13.5px;display:none"><span class="sp" id="home-sp"></span><button class="btn" data-x="manage">'+(homeManage?'完成':'管理')+'</button><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist'+(homeManage?' managing':'')+'"></div></div>');
+    const el=h('<div><div class="topbar"><h1 class="hand" style="font-size:19px">“习惯可以暂停，不能终止”</h1><div class="tb-tools" style="margin-top:0"><button class="iconbtn" data-x="search" title="搜索"><svg viewBox="0 0 32 32" width="19" height="19" aria-hidden="true"><path fill="currentColor" d="M6.368 6.368a11.48 11.48 0 0 1 9.585-3.274L15 3.42a2.2 2.2 0 0 0-.92.59a10.46 10.46 0 0 0-7.005 3.065c-4.1 4.1-4.1 10.75 0 14.85s10.75 4.1 14.85 0a10.45 10.45 0 0 0 2.794-5.018q.112.116.241.213c.201.14.427.239.664.292a11.44 11.44 0 0 1-2.648 4.858l6.876 6.877a.5.5 0 0 1-.707.707l-6.876-6.877c-4.512 4.14-11.528 4.027-15.9-.345c-4.492-4.491-4.492-11.773 0-16.264M25.982 10a.36.36 0 0 1 .342.242l.298.918a1.9 1.9 0 0 0 1.2 1.197l.917.3l.019.003a.363.363 0 0 1 0 .684l-.918.299a1.9 1.9 0 0 0-1.2 1.197l-.298.918a.362.362 0 0 1-.684 0l-.299-.918a1.9 1.9 0 0 0-1.198-1.202l-.919-.298a.364.364 0 0 1-.175-.552a.36.36 0 0 1 .175-.132l.92-.299a1.9 1.9 0 0 0 1.179-1.197l.299-.918a.36.36 0 0 1 .34-.242M20.466 0a.665.665 0 0 1 .627.443l.547 1.683a3.47 3.47 0 0 0 2.198 2.196l1.684.547l.034.008a.666.666 0 0 1 0 1.254l-1.685.547a3.47 3.47 0 0 0-2.197 2.196l-.548 1.683l-.016.04a.666.666 0 0 1-1.238-.04l-.548-1.683a3.47 3.47 0 0 0-2.197-2.204l-1.684-.547A.67.67 0 0 1 15 5.496a.665.665 0 0 1 .444-.627l1.684-.547a3.47 3.47 0 0 0 2.15-2.154l.56-1.725a.665.665 0 0 1 .63-.443"/></svg></button><input type="search" id="home-search" class="input" placeholder="搜索全部记录…" style="flex:1;min-width:0;padding:8px 12px;border-radius:999px;font-size:13.5px;display:none"><span class="sp" id="home-sp"></span><button class="btn" data-x="manage">'+(homeManage?'完成':'管理')+'</button><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist'+(homeManage?' managing':'')+'"></div></div>');
     el.querySelector('.topbar').after(hinvTabs('home'));
     const grid=el.querySelector('.homeviewlist');
     // 搜索框：默认收起为图标，点击展开输入；输入关键词即时搜全部相关记录，清空恢复模块列表
@@ -2566,7 +2566,7 @@ Pages.invHub={
   async render(){
     const allItems=(await DB.all('items')).sort((a,b)=>a.order-b.order);
     const invItems=allItems.filter(it=>it.kind==='inventory'||(it.kind==='custom'&&it.specKind==='inventory'));
-    const el=h('<div><div class="topbar stack"><h1 class="hand" style="font-size:19px">“挥霍和珍惜是同一件事情”</h1><div class="tb-tools" id="invhub-tools"><span class="sp"></span><button class="btn" data-x="manage">'+(invManage?'完成':'管理')+'</button><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist" id="invhub-list" style="padding-top:6px"></div></div>');
+    const el=h('<div><div class="topbar"><h1 class="hand" style="font-size:19px">“挥霍和珍惜是同一件事情”</h1><div class="tb-tools" style="margin-top:0" id="invhub-tools"><span class="sp"></span><button class="btn" data-x="manage">'+(invManage?'完成':'管理')+'</button><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist" id="invhub-list" style="padding-top:6px"></div></div>');
     el.querySelector('.topbar').after(hinvTabs('inv'));
     el.querySelector('[data-x=settings]').onclick=()=>Router.go('settings');
     el.querySelector('[data-x=manage]').onclick=()=>{invManage=!invManage;Router.refresh();};
@@ -2901,7 +2901,7 @@ function openTlForm(K,existing){ // 新增/编辑时间轴记录：日期、时�
 Pages.timelineHub={ // 时间轴首页：反思集 / 工资条 两个项目（风格同图鉴列表）
   async render(){
     await ensureSelfTags(); // 「投资自己」迁移：固定五标签并清旧标签记录
-    const el=h('<div><div class="topbar stack"><h1 class="hand" style="font-size:19px">“把日子过成一条线”</h1><div class="tb-tools"><span class="sp"></span><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist" id="tlhub-list" style="padding-top:6px"></div></div>');
+    const el=h('<div><div class="topbar"><h1 class="hand" style="font-size:19px">“把日子过成一条线”</h1><div class="tb-tools" style="margin-top:0"><span class="sp"></span><button class="iconbtn" data-x="settings" title="设置">⚙</button></div></div><div class="homeviewlist" id="tlhub-list" style="padding-top:6px"></div></div>');
     el.querySelector('.topbar').after(hinvTabs('tl'));
     el.querySelector('[data-x=settings]').onclick=()=>Router.go('settings');
     const list=el.querySelector('#tlhub-list');
